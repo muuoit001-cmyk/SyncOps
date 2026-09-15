@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "SyncOps",
+    "slug": "syncops",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#2563EB"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.syncops.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "SyncOps uses Face ID to confirm clock-in and clock-out actions.",
+        "NSLocationWhenInUseUsageDescription": "SyncOps uses your location at clock-in and clock-out to confirm you are on-site."
+      }
+    },
+    "android": {
+      "package": "com.syncops.app",
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#2563EB"
+      }
+    },
+    "plugins": [
+      "expo-local-authentication",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "SyncOps uses your location at clock-in and clock-out to confirm you are on-site."
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "extra": {
+      "apiUrl": "http://localhost:3001/api"
+    }
+  }
+}

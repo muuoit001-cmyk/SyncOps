@@ -1,0 +1,16 @@
+{
+  "name": "syncops",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SyncOps — Lightweight Staff Attendance System",
+  "workspaces": [
+    "backend",
+    "apps/web",
+    "apps/mobile"
+  ],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "build:web": "npm run build --workspace=apps/web"
+  }
+}

@@ -1,0 +1,333 @@
+const express = require('express');
+const { body, query, validationResult } = require('express-validator');
+const { v4: uuidv4 } = require('uuid');
+const pool = require('../db/pool');
+const { authJwt } = require('../middleware/authJwt');
+const { deviceAuth } = require('../middleware/deviceAuth');
+const { isWithinFence } = require('../utils/geo');
+const { evaluateFraudSignals } = require('../utils/fraud');
+
+const router = express.Router();
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MOBILE ENDPOINTS (device-authenticated)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── POST /api/attendance/clock  (the critical path — must be fast) ─────────
+router.post('/clock', deviceAuth, async (req, res) => {
+  const { action, lat, lng, gps_accuracy_m, is_mock_location, client_time_utc, is_offline_sync, queued_at } = req.body;
+
+  if (!['clock_in', 'clock_out'].includes(action)) {
+    return res.status(400).json({ error: 'action must be clock_in or clock_out' });
+  }
+
+  const serverTime = new Date();
+
+  try {
+    // Fetch site geofence
+    let siteRow = null;
+    if (req.staffMember.site_id) {
+      const { rows } = await pool.query(
+        'SELECT id, name, lat, lng, radius_meters FROM sites WHERE id = $1 AND is_active = true',
+        [req.staffMember.site_id]
+      );
+      siteRow = rows[0] || null;
+    }
+
+    // Geofence check
+    let withinFence = false;
+    let distanceM = null;
+    if (siteRow && lat != null && lng != null) {
+      const geo = isWithinFence({ lat, lng }, siteRow);
+      withinFence = geo.within;
+      distanceM = geo.distanceM;
+    }
+
+    // Last action for rapid clock detection
+    const { rows: lastRows } = await pool.query(
+      `SELECT action, timestamp_utc FROM attendance_logs
+       WHERE staff_id = $1 ORDER BY timestamp_utc DESC LIMIT 1`,
+      [req.staffMember.id]
+    );
+    const lastLog = lastRows[0] || null;
+
+    // Fraud signals
+    const flags = evaluateFraudSignals({
+      gpsAccuracyM: gps_accuracy_m ?? null,
+      isMockLocation: !!is_mock_location,
+      isWithinFence: withinFence,
+      distanceFromSiteM: distanceM,
+      lastActionTime: lastLog?.timestamp_utc ?? null,
+      lastAction: lastLog?.action ?? null,
+      isNewDevice: false, // already validated by deviceAuth
+    });
+
+    const isFlagged = flags.length > 0;
+
+    // Insert log — server timestamp is authoritative
+    const logId = uuidv4();
+    const { rows: logRows } = await pool.query(
+      `INSERT INTO attendance_logs
+         (id, staff_id, site_id, device_id, action, timestamp_utc, client_time_utc,
+          lat, lng, gps_accuracy_m, distance_from_site_m, is_within_fence,
+          is_offline_sync, flag_reason, is_flagged)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       RETURNING *`,
+      [
+        logId,
+        req.staffMember.id,
+        siteRow?.id ?? null,
+        req.device.id,
+        action,
+        serverTime,
+        client_time_utc ? new Date(client_time_utc) : null,
+        lat ?? null,
+        lng ?? null,
+        gps_accuracy_m ?? null,
+        distanceM,
+        withinFence,
+        !!is_offline_sync,
+        flags.length ? flags : null,
+        isFlagged,
+      ]
+    );
+
+    // If offline sync, record in offline_queue
+    if (is_offline_sync && queued_at) {
+      await pool.query(
+        `INSERT INTO offline_queue (id, device_id, staff_id, payload, queued_at, log_id)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [uuidv4(), req.device.id, req.staffMember.id, JSON.stringify(req.body), new Date(queued_at), logId]
+      );
+    }
+
+    const log = logRows[0];
+    res.status(201).json({
+      ok: true,
+      logId: log.id,
+      action: log.action,
+      timestamp: log.timestamp_utc,
+      isFlagged,
+      flags,
+      site: siteRow ? { id: siteRow.id, name: siteRow.name } : null,
+    });
+  } catch (err) {
+    console.error('clock error:', err);
+    res.status(500).json({ error: 'Clock action failed' });
+  }
+});
+
+// ── GET /api/attendance/me  (mobile — staff's own history) ────────────────
+router.get('/me', deviceAuth, async (req, res) => {
+  const since = req.query.since || new Date(Date.now() - 7 * 86400000).toISOString();
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, action, timestamp_utc, is_flagged, flag_reason, site_id
+       FROM attendance_logs
+       WHERE staff_id = $1 AND timestamp_utc >= $2
+       ORDER BY timestamp_utc DESC`,
+      [req.staffMember.id, since]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch history' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// HR DASHBOARD ENDPOINTS (JWT-authenticated)
+// ─────────────────────────────────────────────────────────────────────────
+router.use(authJwt);
+
+// ── GET /api/attendance  (HR — full log with filters) ─────────────────────
+router.get(
+  '/',
+  [
+    query('from').optional().isISO8601(),
+    query('to').optional().isISO8601(),
+    query('staff_id').optional().isUUID(),
+    query('site_id').optional().isUUID(),
+    query('flagged').optional().isBoolean(),
+    query('limit').optional().isInt({ min: 1, max: 500 }),
+    query('offset').optional().isInt({ min: 0 }),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+    const { from, to, staff_id, site_id, flagged, limit = 100, offset = 0 } = req.query;
+
+    const conditions = [];
+    const values = [];
+    let idx = 1;
+
+    if (from) { conditions.push(`al.timestamp_utc >= $${idx++}`); values.push(from); }
+    if (to) { conditions.push(`al.timestamp_utc <= $${idx++}`); values.push(to); }
+    if (staff_id) { conditions.push(`al.staff_id = $${idx++}`); values.push(staff_id); }
+    if (site_id) { conditions.push(`al.site_id = $${idx++}`); values.push(site_id); }
+    if (flagged === 'true') { conditions.push(`al.is_flagged = true`); }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    try {
+      const { rows } = await pool.query(
+        `SELECT
+           al.id, al.action, al.timestamp_utc, al.lat, al.lng, al.gps_accuracy_m,
+           al.distance_from_site_m, al.is_within_fence, al.is_flagged, al.flag_reason,
+           al.is_offline_sync, al.client_time_utc,
+           s.full_name as staff_name, s.employee_id,
+           si.name as site_name,
+           d.device_label
+         FROM attendance_logs al
+         LEFT JOIN staff s ON s.id = al.staff_id
+         LEFT JOIN sites si ON si.id = al.site_id
+         LEFT JOIN devices d ON d.id = al.device_id
+         ${where}
+         ORDER BY al.timestamp_utc DESC
+         LIMIT $${idx++} OFFSET $${idx++}`,
+        [...values, parseInt(limit), parseInt(offset)]
+      );
+
+      const count = await pool.query(
+        `SELECT COUNT(*) FROM attendance_logs al ${where}`,
+        values
+      );
+
+      res.json({ logs: rows, total: parseInt(count.rows[0].count) });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Failed to fetch attendance logs' });
+    }
+  }
+);
+
+// ── GET /api/attendance/export  (CSV) ─────────────────────────────────────
+router.get('/export', async (req, res) => {
+  const { from, to, staff_id, site_id, flagged } = req.query;
+  const conditions = [];
+  const values = [];
+  let idx = 1;
+
+  if (from) { conditions.push(`al.timestamp_utc >= $${idx++}`); values.push(from); }
+  if (to) { conditions.push(`al.timestamp_utc <= $${idx++}`); values.push(to); }
+  if (staff_id) { conditions.push(`al.staff_id = $${idx++}`); values.push(staff_id); }
+  if (site_id) { conditions.push(`al.site_id = $${idx++}`); values.push(site_id); }
+  if (flagged === 'true') { conditions.push('al.is_flagged = true'); }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         s.employee_id, s.full_name as staff_name,
+         al.action, al.timestamp_utc, al.is_within_fence,
+         al.distance_from_site_m, al.gps_accuracy_m,
+         al.is_flagged, al.flag_reason,
+         si.name as site_name, d.device_label
+       FROM attendance_logs al
+       LEFT JOIN staff s ON s.id = al.staff_id
+       LEFT JOIN sites si ON si.id = al.site_id
+       LEFT JOIN devices d ON d.id = al.device_id
+       ${where}
+       ORDER BY al.timestamp_utc DESC`,
+      values
+    );
+
+    const header = [
+      'Employee ID', 'Staff Name', 'Action', 'Timestamp (UTC)',
+      'Site', 'Within Fence', 'Distance (m)', 'GPS Accuracy (m)',
+      'Flagged', 'Flag Reasons', 'Device',
+    ].join(',');
+
+    const csvRows = rows.map((r) =>
+      [
+        r.employee_id,
+        `"${r.staff_name}"`,
+        r.action,
+        r.timestamp_utc,
+        `"${r.site_name || ''}"`,
+        r.is_within_fence,
+        r.distance_from_site_m ?? '',
+        r.gps_accuracy_m ?? '',
+        r.is_flagged,
+        `"${(r.flag_reason || []).join('; ')}"`,
+        `"${r.device_label || ''}"`,
+      ].join(',')
+    );
+
+    const csv = [header, ...csvRows].join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="syncops_attendance_${Date.now()}.csv"`);
+    res.send(csv);
+  } catch (err) {
+    res.status(500).json({ error: 'Export failed' });
+  }
+});
+
+// ── GET /api/attendance/dashboard  (summary for dashboard home) ───────────
+router.get('/dashboard', async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+
+    // Total active staff
+    const { rows: totalRows } = await pool.query(
+      "SELECT COUNT(*) FROM staff WHERE status = 'active'"
+    );
+    const totalActive = parseInt(totalRows[0].count);
+
+    // Clocked in today
+    const { rows: presentRows } = await pool.query(
+      `SELECT COUNT(DISTINCT staff_id) FROM attendance_logs
+       WHERE action = 'clock_in' AND timestamp_utc >= $1 AND timestamp_utc < $2`,
+      [today.toISOString(), tomorrow.toISOString()]
+    );
+    const present = parseInt(presentRows[0].count);
+
+    // Late (clock-in after 09:00)
+    const lateThreshold = new Date(today);
+    lateThreshold.setHours(9, 0, 0, 0);
+    const { rows: lateRows } = await pool.query(
+      `SELECT COUNT(DISTINCT staff_id) FROM attendance_logs
+       WHERE action = 'clock_in' AND timestamp_utc >= $1 AND timestamp_utc < $2`,
+      [lateThreshold.toISOString(), tomorrow.toISOString()]
+    );
+    const late = parseInt(lateRows[0].count);
+
+    // Flagged today
+    const { rows: flaggedRows } = await pool.query(
+      `SELECT COUNT(*) FROM attendance_logs
+       WHERE is_flagged = true AND timestamp_utc >= $1 AND timestamp_utc < $2`,
+      [today.toISOString(), tomorrow.toISOString()]
+    );
+    const flagged = parseInt(flaggedRows[0].count);
+
+    // Recent activity (last 20 events)
+    const { rows: recent } = await pool.query(
+      `SELECT al.action, al.timestamp_utc, al.is_flagged,
+              s.full_name as staff_name, si.name as site_name
+       FROM attendance_logs al
+       LEFT JOIN staff s ON s.id = al.staff_id
+       LEFT JOIN sites si ON si.id = al.site_id
+       ORDER BY al.timestamp_utc DESC LIMIT 20`
+    );
+
+    res.json({
+      summary: {
+        present,
+        late,
+        absent: Math.max(0, totalActive - present),
+        flagged,
+        totalActive,
+      },
+      recentActivity: recent,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch dashboard data' });
+  }
+});
+
+module.exports = router;
