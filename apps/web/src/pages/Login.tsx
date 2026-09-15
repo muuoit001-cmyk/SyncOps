@@ -32,7 +32,16 @@ const Login: React.FC = () => {
       }
       navigate('/');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Login failed. Please check your credentials.');
+      console.error('Login error details:', err);
+      if (err.response?.data?.error) {
+        setError(err.response.data.error);
+      } else if (err.code === 'ERR_NETWORK' || !err.response) {
+        setError(`Cannot reach backend server. Check VITE_API_BASE_URL and CORS settings. (${err.message})`);
+      } else if (typeof err.response?.data === 'string' && err.response.data.includes('<!DOCTYPE html>')) {
+        setError('Frontend is calling Vercel instead of the Railway API. Set VITE_API_BASE_URL on Vercel and redeploy.');
+      } else {
+        setError(err.message || 'Login failed. Please check your credentials.');
+      }
     } finally {
       setLoading(false);
     }
@@ -62,7 +71,7 @@ const Login: React.FC = () => {
             SyncOps
           </h1>
           <p style={{ color: 'var(--color-text-muted)', fontSize: '0.875rem', marginTop: '0.3rem' }}>
-            HR Dashboard — Sign in to continue
+            Dashboard — Sign in to continue
           </p>
         </div>
 
@@ -208,7 +217,7 @@ const Login: React.FC = () => {
         </form>
 
         <p style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '1.5rem' }}>
-          Demo credentials: admin@syncops.dev / admin123
+          SyncOps@2026. All Rights Reserved.
         </p>
       </div>
     </div>

@@ -159,11 +159,11 @@ BEGIN
   VALUES (
     v_hr_id,
     'admin@syncops.dev',
-    '$2a$12$pc8OXzeBEn0MO/KBB8iukuCmofe8B7U/DF4zyIlXGJF/fMhmTKpa6',
+    '$2a$10$Y57vTgs85bG4gBsNwjra1ORYLn0Cb0GlSVPdN419RbBYQK3VrHsiK',
     'SyncOps Admin',
     'hr_admin'
   )
-  ON CONFLICT (email) DO NOTHING;
+  ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash;
 
   -- 2. Insert HQ Site
   INSERT INTO sites (id, name, address, lat, lng, radius_meters, created_by)

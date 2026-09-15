@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
-import { colors, spacing, fontSize, shadow } from '../../constants/theme';
+import { colors, spacing, fontSize, shadow } from '../constants/theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 

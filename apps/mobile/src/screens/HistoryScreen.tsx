@@ -4,9 +4,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format, differenceInMinutes, startOfDay, isSameDay } from 'date-fns';
-import { colors, spacing, radius, fontSize, shadow } from '../../constants/theme';
-import { signedRequest } from '../../services/api';
-import { useSessionStore } from '../../store/sessionStore';
+import { colors, spacing, radius, fontSize, shadow } from '../constants/theme';
+import { signedRequest } from '../services/api';
+import { useSessionStore } from '../store/sessionStore';
 
 type Period = 'week' | 'month';
 

@@ -5,10 +5,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
-import { colors, spacing, radius, fontSize, shadow } from '../../constants/theme';
-import { useSessionStore } from '../../store/sessionStore';
-import { useGeofence } from '../../hooks/useGeofence';
-import { useAttendance, getLastAction, getNextAction, ClockAction } from '../../hooks/useAttendance';
+import { colors, spacing, radius, fontSize, shadow } from '../constants/theme';
+import { useSessionStore } from '../store/sessionStore';
+import { useGeofence } from '../hooks/useGeofence';
+import { useAttendance, getLastAction, getNextAction, ClockAction } from '../hooks/useAttendance';
 import * as Location from 'expo-location';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -59,7 +59,7 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         lng: pos.coords.longitude,
         accuracy: pos.coords.accuracy ?? undefined,
       }))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Pulse animation when idle
@@ -115,10 +115,10 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const buttonLabel = clockState === 'authenticating'
     ? 'Verifying...'
     : clockState === 'submitting'
-    ? 'Recording...'
-    : isFenceChecking
-    ? 'Checking location...'
-    : nextAction === 'clock_in' ? 'Clock In' : 'Clock Out';
+      ? 'Recording...'
+      : isFenceChecking
+        ? 'Checking location...'
+        : nextAction === 'clock_in' ? 'Clock In' : 'Clock Out';
 
   const now = new Date();
 

@@ -13,9 +13,22 @@ const devicesRoutes = require('./routes/devices');
 const app = express();
 
 // ── Security ──────────────────────────────────────────────────────────────
-app.use(helmet());
+const rawCors = process.env.CORS_ORIGIN || 'http://localhost:5173';
+const allowedOrigins = rawCors.split(',').map((o) => o.trim().replace(/\/$/, ''));
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    const cleanOrigin = origin.replace(/\/$/, '');
+    if (
+      allowedOrigins.includes('*') ||
+      allowedOrigins.includes(cleanOrigin) ||
+      cleanOrigin.endsWith('.vercel.app')
+    ) {
+      return callback(null, true);
+    }
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
   credentials: true,
 }));
 
