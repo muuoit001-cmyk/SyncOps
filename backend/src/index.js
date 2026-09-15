@@ -11,6 +11,7 @@ const attendanceRoutes = require('./routes/attendance');
 const devicesRoutes = require('./routes/devices');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // ── Security ──────────────────────────────────────────────────────────────
 const rawCors = process.env.CORS_ORIGIN || 'http://localhost:5173';
