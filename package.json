@@ -9,6 +9,7 @@
     "apps/mobile"
   ],
   "scripts": {
+    "start": "npm start --workspace=backend",
     "dev:backend": "npm run dev --workspace=backend",
     "dev:web": "npm run dev --workspace=apps/web",
     "build:web": "npm run build --workspace=apps/web"
