@@ -2,7 +2,13 @@ import axios from 'axios';
 
 function getApiBaseUrl(): string {
   const envUrl = import.meta.env.VITE_API_BASE_URL;
-  if (!envUrl) return '/api';
+  if (!envUrl) {
+    // Keep the Vite proxy for local development, but never point a deployed
+    // dashboard at its own host when the Vercel variable is missing.
+    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? '/api'
+      : 'https://syncops-production-f5ac.up.railway.app/api';
+  }
   
   let cleanUrl = envUrl.trim();
   if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {

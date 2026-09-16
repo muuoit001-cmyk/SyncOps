@@ -168,9 +168,10 @@ The backend now refuses to start in production when JWT secrets are missing/weak
 4. Run `node src/db/init.js` and `node src/db/seed.js` via Railway shell
 
 ### Web Dashboard (Vercel)
-1. Set `VITE_API_URL` in Vercel env (or use the Vite proxy for same-domain deployment)
+1. Set `VITE_API_BASE_URL=https://syncops-production-f5ac.up.railway.app/api` in Vercel environment variables
 2. `npm run build --prefix apps/web`
 3. Deploy `apps/web/dist/`
+4. Set the deployed dashboard origin in the backend `CORS_ORIGIN` variable, for example `https://your-dashboard.vercel.app`
 
 ### Mobile (EAS Build)
 1. `npm install -g eas-cli`
