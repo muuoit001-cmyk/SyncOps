@@ -18,10 +18,6 @@ async function ensureSchema() {
   await pool.query(`
     ALTER TABLE attendance_logs
       ADD COLUMN IF NOT EXISTS is_accepted BOOLEAN NOT NULL DEFAULT TRUE;
-    DROP INDEX IF EXISTS idx_attendance_staff_action_day;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_staff_action_day
-      ON attendance_logs (staff_id, action, ((timezone('UTC', timestamp_utc))::date))
-      WHERE is_accepted = TRUE;
   `);
 
   await pool.query(`
@@ -58,12 +54,30 @@ async function ensureSchema() {
 
   try {
     await pool.query(`
+      WITH ranked_attendance AS (
+        SELECT id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY staff_id, action, (timezone('UTC', timestamp_utc))::date
+                 ORDER BY timestamp_utc DESC, created_at DESC, id DESC
+               ) AS row_number
+        FROM attendance_logs
+        WHERE is_accepted = TRUE
+      )
+      UPDATE attendance_logs AS logs
+      SET is_accepted = FALSE,
+          is_flagged = TRUE,
+          flag_reason = array_append(COALESCE(logs.flag_reason, ARRAY[]::TEXT[]), 'duplicate_daily_action')
+      FROM ranked_attendance AS ranked
+      WHERE logs.id = ranked.id AND ranked.row_number > 1;
+
+      DROP INDEX IF EXISTS idx_attendance_staff_action_day;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_staff_action_day
         ON attendance_logs (
           staff_id,
           action,
           ((timezone('UTC', timestamp_utc))::date)
-        );
+        )
+        WHERE is_accepted = TRUE;
     `);
   } catch (err) {
     console.warn('Could not add unique daily attendance index:', err.message);

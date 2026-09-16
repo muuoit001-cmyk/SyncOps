@@ -134,6 +134,13 @@ CREATE TABLE IF NOT EXISTS notifications (
   read_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Additive migrations for databases where the tables already existed.
+ALTER TABLE sites
+  ADD COLUMN IF NOT EXISTS polygon_coordinates JSONB;
+
+ALTER TABLE attendance_logs
+  ADD COLUMN IF NOT EXISTS is_accepted BOOLEAN NOT NULL DEFAULT TRUE;
+
 -- ── 8. Indexes ──────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_attendance_staff_id ON attendance_logs(staff_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_timestamp ON attendance_logs(timestamp_utc DESC);
@@ -141,6 +148,26 @@ CREATE INDEX IF NOT EXISTS idx_attendance_flagged ON attendance_logs(is_flagged)
 CREATE INDEX IF NOT EXISTS idx_staff_employee_id ON staff(employee_id);
 CREATE INDEX IF NOT EXISTS idx_staff_site_id ON staff(site_id);
 CREATE INDEX IF NOT EXISTS idx_devices_staff_id ON devices(staff_id);
+
+-- Preserve historical duplicates but allow only one accepted clock action
+-- per staff, action, and UTC day going forward.
+WITH ranked_attendance AS (
+  SELECT id,
+         ROW_NUMBER() OVER (
+           PARTITION BY staff_id, action, (timezone('UTC', timestamp_utc))::date
+           ORDER BY timestamp_utc DESC, created_at DESC, id DESC
+         ) AS row_number
+  FROM attendance_logs
+  WHERE is_accepted = TRUE
+)
+UPDATE attendance_logs AS logs
+SET is_accepted = FALSE,
+    is_flagged = TRUE,
+    flag_reason = array_append(COALESCE(logs.flag_reason, ARRAY[]::TEXT[]), 'duplicate_daily_action')
+FROM ranked_attendance AS ranked
+WHERE logs.id = ranked.id
+  AND ranked.row_number > 1;
+
 DROP INDEX IF EXISTS idx_attendance_staff_action_day;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_staff_action_day
   ON attendance_logs (staff_id, action, ((timezone('UTC', timestamp_utc))::date))
@@ -226,24 +253,30 @@ BEGIN
   FOR v_day IN 0..6 LOOP
     -- Alice
     INSERT INTO attendance_logs (staff_id, site_id, action, timestamp_utc, lat, lng, gps_accuracy_m, distance_from_site_m, is_within_fence)
-    VALUES (v_staff1_id, v_site_id, 'clock_in', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '08:15:00', -1.2921, 36.8219, 6.2, 28.5, true);
+    VALUES (v_staff1_id, v_site_id, 'clock_in', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '08:15:00', -1.2921, 36.8219, 6.2, 28.5, true)
+    ON CONFLICT DO NOTHING;
 
     INSERT INTO attendance_logs (staff_id, site_id, action, timestamp_utc, lat, lng, gps_accuracy_m, distance_from_site_m, is_within_fence)
-    VALUES (v_staff1_id, v_site_id, 'clock_out', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '17:05:00', -1.2921, 36.8219, 7.1, 31.0, true);
+    VALUES (v_staff1_id, v_site_id, 'clock_out', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '17:05:00', -1.2921, 36.8219, 7.1, 31.0, true)
+    ON CONFLICT DO NOTHING;
 
     -- Brian
     INSERT INTO attendance_logs (staff_id, site_id, action, timestamp_utc, lat, lng, gps_accuracy_m, distance_from_site_m, is_within_fence)
-    VALUES (v_staff2_id, v_site_id, 'clock_in', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '08:28:00', -1.2921, 36.8219, 8.4, 45.1, true);
+    VALUES (v_staff2_id, v_site_id, 'clock_in', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '08:28:00', -1.2921, 36.8219, 8.4, 45.1, true)
+    ON CONFLICT DO NOTHING;
 
     INSERT INTO attendance_logs (staff_id, site_id, action, timestamp_utc, lat, lng, gps_accuracy_m, distance_from_site_m, is_within_fence)
-    VALUES (v_staff2_id, v_site_id, 'clock_out', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '17:15:00', -1.2921, 36.8219, 6.9, 39.4, true);
+    VALUES (v_staff2_id, v_site_id, 'clock_out', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '17:15:00', -1.2921, 36.8219, 6.9, 39.4, true)
+    ON CONFLICT DO NOTHING;
 
     -- Carol
     INSERT INTO attendance_logs (staff_id, site_id, action, timestamp_utc, lat, lng, gps_accuracy_m, distance_from_site_m, is_within_fence)
-    VALUES (v_staff3_id, v_site_id, 'clock_in', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '08:42:00', -1.2921, 36.8219, 9.1, 52.0, true);
+    VALUES (v_staff3_id, v_site_id, 'clock_in', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '08:42:00', -1.2921, 36.8219, 9.1, 52.0, true)
+    ON CONFLICT DO NOTHING;
 
     INSERT INTO attendance_logs (staff_id, site_id, action, timestamp_utc, lat, lng, gps_accuracy_m, distance_from_site_m, is_within_fence)
-    VALUES (v_staff3_id, v_site_id, 'clock_out', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '16:55:00', -1.2921, 36.8219, 8.0, 48.2, true);
+    VALUES (v_staff3_id, v_site_id, 'clock_out', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '16:55:00', -1.2921, 36.8219, 8.0, 48.2, true)
+    ON CONFLICT DO NOTHING;
   END LOOP;
 
 END $$;
