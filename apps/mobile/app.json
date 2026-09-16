@@ -6,9 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "backgroundColor": "#2563EB"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.syncops.app",

@@ -12,6 +12,30 @@ const router = express.Router();
 // ═══════════════════════════════════════════════════════════════════════════
 // MOBILE ENDPOINTS (device-authenticated)
 // ═══════════════════════════════════════════════════════════════════════════
+// ── GET /api/attendance/today-status (mobile — check today's status) ───────
+router.get('/today-status', deviceAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT action, timestamp_utc FROM attendance_logs
+       WHERE staff_id = $1
+         AND (timezone('UTC', timestamp_utc))::date = (timezone('UTC', NOW()))::date
+       ORDER BY timestamp_utc ASC`,
+      [req.staffMember.id]
+    );
+    const hasClockIn = rows.some(r => r.action === 'clock_in');
+    const hasClockOut = rows.some(r => r.action === 'clock_out');
+    res.json({
+      hasClockIn,
+      hasClockOut,
+      isComplete: hasClockIn && hasClockOut,
+      nextAction: !hasClockIn ? 'clock_in' : (!hasClockOut ? 'clock_out' : null),
+      todayLogs: rows,
+    });
+  } catch (err) {
+    console.error('today-status error:', err);
+    res.status(500).json({ error: 'Failed to fetch today status' });
+  }
+});
 
 // ── POST /api/attendance/clock  (the critical path — must be fast) ─────────
 router.post('/clock', deviceAuth, async (req, res) => {
@@ -24,6 +48,40 @@ router.post('/clock', deviceAuth, async (req, res) => {
   const serverTime = new Date();
 
   try {
+    // ── Enforce once-in, once-out per calendar day ──────────────────────────
+    const { rows: todayRows } = await pool.query(
+      `SELECT action, timestamp_utc FROM attendance_logs
+       WHERE staff_id = $1
+         AND (timezone('UTC', timestamp_utc))::date = (timezone('UTC', NOW()))::date
+       ORDER BY timestamp_utc ASC`,
+      [req.staffMember.id]
+    );
+
+    const hasClockInToday = todayRows.some(r => r.action === 'clock_in');
+    const hasClockOutToday = todayRows.some(r => r.action === 'clock_out');
+
+    if (action === 'clock_in' && hasClockInToday) {
+      return res.status(400).json({
+        error: 'You have already clocked in today. Only one clock-in per day is allowed.',
+        code: 'ALREADY_CLOCKED_IN'
+      });
+    }
+
+    if (action === 'clock_out') {
+      if (!hasClockInToday) {
+        return res.status(400).json({
+          error: 'You must clock in today before you can clock out.',
+          code: 'NOT_CLOCKED_IN'
+        });
+      }
+      if (hasClockOutToday) {
+        return res.status(400).json({
+          error: 'You have already clocked out today. Only one clock-out per day is allowed.',
+          code: 'ALREADY_CLOCKED_OUT'
+        });
+      }
+    }
+
     // Fetch site geofence
     let siteRow = null;
     if (req.staffMember.site_id) {
@@ -112,6 +170,14 @@ router.post('/clock', deviceAuth, async (req, res) => {
       site: siteRow ? { id: siteRow.id, name: siteRow.name } : null,
     });
   } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({
+        error: action === 'clock_in'
+          ? 'You have already clocked in today. Only one clock-in per day is allowed.'
+          : 'You have already clocked out today. Only one clock-out per day is allowed.',
+        code: action === 'clock_in' ? 'ALREADY_CLOCKED_IN' : 'ALREADY_CLOCKED_OUT',
+      });
+    }
     console.error('clock error:', err);
     res.status(500).json({ error: 'Clock action failed' });
   }
@@ -239,27 +305,33 @@ router.get('/export', async (req, res) => {
       'Flagged', 'Flag Reasons', 'Device',
     ].join(',');
 
+    const csvEscape = (value) => {
+      const str = value == null ? '' : String(value);
+      return `"${str.replace(/"/g, '""')}"`;
+    };
+
     const csvRows = rows.map((r) =>
       [
-        r.employee_id,
-        `"${r.staff_name}"`,
-        r.action,
-        r.timestamp_utc,
-        `"${r.site_name || ''}"`,
-        r.is_within_fence,
-        r.distance_from_site_m ?? '',
-        r.gps_accuracy_m ?? '',
-        r.is_flagged,
-        `"${(r.flag_reason || []).join('; ')}"`,
-        `"${r.device_label || ''}"`,
+        csvEscape(r.employee_id),
+        csvEscape(r.staff_name),
+        csvEscape(r.action),
+        csvEscape(r.timestamp_utc ? new Date(r.timestamp_utc).toISOString() : ''),
+        csvEscape(r.site_name),
+        csvEscape(r.is_within_fence),
+        csvEscape(r.distance_from_site_m),
+        csvEscape(r.gps_accuracy_m),
+        csvEscape(r.is_flagged),
+        csvEscape((r.flag_reason || []).join('; ')),
+        csvEscape(r.device_label),
       ].join(',')
     );
 
-    const csv = [header, ...csvRows].join('\n');
-    res.setHeader('Content-Type', 'text/csv');
+    const csv = [header, ...csvRows].join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="syncops_attendance_${Date.now()}.csv"`);
-    res.send(csv);
+    res.send(`\uFEFF${csv}`);
   } catch (err) {
+    console.error('export error:', err);
     res.status(500).json({ error: 'Export failed' });
   }
 });

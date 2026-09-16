@@ -21,8 +21,8 @@ async function deviceAuth(req, res, next) {
   }
 
   const ts = parseInt(tsHeader, 10);
-  if (isNaN(ts) || Math.abs(Date.now() - ts) > 30_000) {
-    return res.status(401).json({ error: 'Timestamp out of range (±30s)' });
+  if (isNaN(ts) || Math.abs(Date.now() - ts) > 120_000) {
+    return res.status(401).json({ error: 'Timestamp out of range. Check the device clock and try again.' });
   }
 
   try {
@@ -44,15 +44,16 @@ async function deviceAuth(req, res, next) {
       return res.status(403).json({ error: 'Staff account is not active' });
     }
 
-    // Verify HMAC signature
-    const bodyStr = JSON.stringify(req.body);
+    const bodyStr = JSON.stringify(req.body && typeof req.body === 'object' ? req.body : {});
     const payload = `${deviceId}:${tsHeader}:${bodyStr}`;
     const expected = crypto
       .createHmac('sha256', device.device_token)
       .update(payload)
       .digest('hex');
 
-    if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expected, 'hex'))) {
+    const sigBuf = Buffer.from(String(sig), 'hex');
+    const expectedBuf = Buffer.from(expected, 'hex');
+    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
       return res.status(401).json({ error: 'Invalid device signature' });
     }
 

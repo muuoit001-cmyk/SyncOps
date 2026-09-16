@@ -9,9 +9,15 @@ const staffRoutes = require('./routes/staff');
 const sitesRoutes = require('./routes/sites');
 const attendanceRoutes = require('./routes/attendance');
 const devicesRoutes = require('./routes/devices');
+const { ensureSchema } = require('./db/ensureSchema');
 
 const app = express();
 app.set('trust proxy', 1);
+
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: false,
+}));
 
 // ── Security ──────────────────────────────────────────────────────────────
 const rawCors = process.env.CORS_ORIGIN || 'http://localhost:5173';
@@ -31,10 +37,11 @@ app.use(cors({
     return callback(new Error(`CORS blocked for origin: ${origin}`));
   },
   credentials: true,
+  exposedHeaders: ['Content-Disposition'],
 }));
 
 // ── Body parsing ──────────────────────────────────────────────────────────
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '5mb' }));
 
 // ── Rate limiting ─────────────────────────────────────────────────────────
 const globalLimiter = rateLimit({
@@ -88,6 +95,11 @@ app.use((err, req, res, next) => {
 
 // ── Start ─────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
+
+ensureSchema()
+  .then(() => console.log('   Database schema verified'))
+  .catch((err) => console.error('   Schema verify failed:', err.message));
+
 app.listen(PORT, () => {
   console.log(`\n🚀 SyncOps API running on http://localhost:${PORT}`);
   console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);

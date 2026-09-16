@@ -27,8 +27,12 @@ const EnrollIdScreen: React.FC<Props> = ({ navigation }) => {
       // Navigate to location permission step with staff data
       navigation.navigate('EnrollLocation', { staffData: data });
     } catch (err: any) {
-      const msg = err.response?.data?.error || 'Employee ID not found. Contact your HR team.';
-      setError(msg);
+      if (err.code === 'ERR_NETWORK' || !err.response) {
+        setError('Cannot reach the SyncOps server. Check your internet connection and try again.');
+      } else {
+        const msg = err.response?.data?.error || 'Employee ID not found. Contact your HR team.';
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }

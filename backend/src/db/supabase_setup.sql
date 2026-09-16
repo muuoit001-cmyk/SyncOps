@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS hr_users (
   totp_secret   VARCHAR(255),
   totp_enabled  BOOLEAN NOT NULL DEFAULT FALSE,
   is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+  auth_user_id  UUID,
   last_login_at TIMESTAMPTZ,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -111,6 +112,8 @@ CREATE INDEX IF NOT EXISTS idx_attendance_flagged ON attendance_logs(is_flagged)
 CREATE INDEX IF NOT EXISTS idx_staff_employee_id ON staff(employee_id);
 CREATE INDEX IF NOT EXISTS idx_staff_site_id ON staff(site_id);
 CREATE INDEX IF NOT EXISTS idx_devices_staff_id ON devices(staff_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_staff_action_day
+  ON attendance_logs (staff_id, action, ((timezone('UTC', timestamp_utc))::date));
 
 -- ── 9. Triggers ─────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION update_updated_at()

@@ -8,7 +8,7 @@ import { format } from 'date-fns';
 import { colors, spacing, radius, fontSize, shadow } from '../constants/theme';
 import { useSessionStore } from '../store/sessionStore';
 import { useGeofence } from '../hooks/useGeofence';
-import { useAttendance, getLastAction, getNextAction, ClockAction } from '../hooks/useAttendance';
+import { useAttendance, getLastAction, getNextAction, ClockAction, NextClockAction } from '../hooks/useAttendance';
 import * as Location from 'expo-location';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -28,16 +28,16 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const { status: fenceStatus, distanceM, accuracy, siteName, recheck } = useGeofence();
   const {
     clockState, error, confirmedAt, isOffline, queuedCount,
-    performClock, reset, refreshQueuedCount,
+    performClock, reset, refreshQueuedCount, refreshTodayStatus,
   } = useAttendance();
 
-  const [nextAction, setNextAction] = useState<ClockAction>('clock_in');
+  const [nextAction, setNextAction] = useState<NextClockAction>('clock_in');
   const [lastActionLabel, setLastActionLabel] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Load last action on mount
+  // Load last action on mount, then confirm with server (source of truth)
   useEffect(() => {
     getLastAction().then(last => {
       setNextAction(getNextAction(last));
@@ -49,6 +49,12 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       }
     });
     refreshQueuedCount();
+    refreshTodayStatus().then((status) => {
+      if (!status) return;
+      if (status.isComplete) setNextAction('completed');
+      else if (status.nextAction === 'clock_out') setNextAction('clock_out');
+      else if (status.nextAction === 'clock_in') setNextAction('clock_in');
+    });
   }, []);
 
   // Get GPS location in background (for clock payload)
@@ -64,7 +70,7 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   // Pulse animation when idle
   useEffect(() => {
-    if (clockState === 'idle' && fenceStatus === 'inside') {
+    if (clockState === 'idle' && fenceStatus === 'inside' && nextAction !== 'completed') {
       const anim = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.04, duration: 1200, useNativeDriver: true }),
@@ -75,18 +81,18 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       return () => anim.stop();
     }
     pulseAnim.setValue(1);
-  }, [clockState, fenceStatus]);
+  }, [clockState, fenceStatus, nextAction]);
 
   // Navigate to confirmation on success
   useEffect(() => {
     if (clockState === 'success' && confirmedAt) {
       navigation.navigate('Confirm', {
-        action: nextAction,
+        action: nextAction === 'clock_out' ? 'clock_out' : 'clock_in',
         timestamp: confirmedAt,
         isOffline,
       });
-      // Flip action for next time
-      setNextAction(a => a === 'clock_in' ? 'clock_out' : 'clock_in');
+      // Flip action for next time: clock_in -> clock_out, clock_out -> completed
+      setNextAction(a => a === 'clock_in' ? 'clock_out' : 'completed');
       setLastActionLabel(
         `${nextAction === 'clock_in' ? 'Clocked in' : 'Clocked out'} at ${format(new Date(confirmedAt), 'h:mm a')}`
       );
@@ -95,12 +101,15 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   }, [clockState, confirmedAt]);
 
   const handleClockTap = async () => {
-    if (clockState !== 'idle') return;
-    await performClock(nextAction, currentLocation);
+    if (clockState !== 'idle' || nextAction === 'completed') return;
+    await performClock(nextAction as ClockAction, currentLocation);
   };
 
   // ── Button state derivation ───────────────────────────────────────────────
+  const isCompletedToday = nextAction === 'completed';
+
   const isButtonDisabled =
+    isCompletedToday ||
     clockState !== 'idle' ||
     fenceStatus === 'outside' ||
     fenceStatus === 'permission_denied';
@@ -108,17 +117,21 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const isFenceChecking = fenceStatus === 'checking';
   const isLowAccuracy = fenceStatus === 'low_accuracy';
 
-  const buttonColor = isButtonDisabled && fenceStatus !== 'low_accuracy'
-    ? colors.textMuted
-    : nextAction === 'clock_in' ? colors.primary : colors.clockOut;
+  const buttonColor = isCompletedToday
+    ? colors.success
+    : isButtonDisabled && fenceStatus !== 'low_accuracy'
+      ? colors.textMuted
+      : nextAction === 'clock_in' ? colors.primary : colors.clockOut;
 
-  const buttonLabel = clockState === 'authenticating'
-    ? 'Verifying...'
-    : clockState === 'submitting'
-      ? 'Recording...'
-      : isFenceChecking
-        ? 'Checking location...'
-        : nextAction === 'clock_in' ? 'Clock In' : 'Clock Out';
+  const buttonLabel = isCompletedToday
+    ? 'Done for Today'
+    : clockState === 'authenticating'
+      ? 'Verifying...'
+      : clockState === 'submitting'
+        ? 'Recording...'
+        : isFenceChecking
+          ? 'Checking location...'
+          : nextAction === 'clock_in' ? 'Clock In' : 'Clock Out';
 
   const now = new Date();
 
@@ -156,12 +169,12 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               style={[
                 styles.clockButton,
                 {
-                  backgroundColor: isButtonDisabled ? '#E2E8F0' : buttonColor,
+                  backgroundColor: isCompletedToday ? colors.success : (isButtonDisabled ? '#E2E8F0' : buttonColor),
                   width: BUTTON_SIZE,
                   height: BUTTON_SIZE,
                   borderRadius: BUTTON_SIZE / 2,
                 },
-                !isButtonDisabled && shadow.lg,
+                !isButtonDisabled && !isCompletedToday && shadow.lg,
               ]}
               onPress={handleClockTap}
               disabled={isButtonDisabled && fenceStatus !== 'low_accuracy'}
@@ -175,6 +188,14 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 <View style={styles.spinnerContainer}>
                   <Text style={styles.clockButtonText}>⏳</Text>
                   <Text style={styles.clockButtonSubtext}>{buttonLabel}</Text>
+                </View>
+              ) : isCompletedToday ? (
+                <View style={styles.spinnerContainer}>
+                  <Text style={[styles.clockButtonText, { color: '#fff' }]}>✓</Text>
+                  <Text style={[styles.clockButtonLabel, { color: '#fff', fontSize: fontSize.base }]}>Done for Today</Text>
+                  <Text style={[styles.clockButtonSubtext, { color: '#fff', fontSize: fontSize.xs }]}>
+                    Attendance complete
+                  </Text>
                 </View>
               ) : isFenceChecking ? (
                 <View style={styles.spinnerContainer}>
@@ -193,6 +214,7 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               )}
             </TouchableOpacity>
           </Animated.View>
+
 
           {/* Geofence status message — inline, calm, no modal */}
           {fenceStatus === 'outside' && distanceM !== null && (

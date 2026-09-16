@@ -30,16 +30,22 @@ export async function setLastAction(action: LastAction): Promise<void> {
   await AsyncStorage.setItem(LAST_ACTION_KEY, JSON.stringify(action));
 }
 
+export type NextClockAction = ClockAction | 'completed';
+
 /**
  * Determines what the next action should be based on last action.
- * If last was clock_in → next is clock_out. Default is clock_in.
+ * If last was today's clock_in → next is clock_out.
+ * If last was today's clock_out → attendance for today is completed.
+ * Otherwise (e.g. new day) → next is clock_in.
  */
-export function getNextAction(last: LastAction | null): ClockAction {
+export function getNextAction(last: LastAction | null): NextClockAction {
   if (!last) return 'clock_in';
-  // If last action was today's clock_in → next is clock_out
   const lastDate = new Date(last.timestamp).toDateString();
   const today = new Date().toDateString();
-  if (last.action === 'clock_in' && lastDate === today) return 'clock_out';
+  if (lastDate === today) {
+    if (last.action === 'clock_in') return 'clock_out';
+    if (last.action === 'clock_out') return 'completed';
+  }
   return 'clock_in';
 }
 
@@ -56,6 +62,27 @@ export function useAttendance() {
     setQueuedCount(q.length);
   }, []);
 
+  const refreshTodayStatus = useCallback(async () => {
+    if (!session) return null;
+    try {
+      const { data } = await signedRequest(
+        'GET',
+        '/attendance/today-status',
+        {},
+        session.deviceId,
+        session.deviceToken,
+      );
+      return data as {
+        hasClockIn: boolean;
+        hasClockOut: boolean;
+        isComplete: boolean;
+        nextAction: ClockAction | null;
+      };
+    } catch {
+      return null;
+    }
+  }, [session]);
+
   /**
    * Main clock action — the critical 5-second path.
    * Called after user taps the button (geofence already checked).
@@ -65,6 +92,20 @@ export function useAttendance() {
     location: { lat: number; lng: number; accuracy?: number } | null,
   ) => {
     if (!session || clockState !== 'idle') return null;
+
+    const last = await getLastAction();
+    const next = getNextAction(last);
+    if (next === 'completed' || (action === 'clock_in' && next !== 'clock_in') || (action === 'clock_out' && next !== 'clock_out')) {
+      setError(
+        action === 'clock_in'
+          ? 'You have already clocked in today. Only one clock-in per day is allowed.'
+          : next === 'completed'
+            ? 'You have already clocked out today. Only one clock-out per day is allowed.'
+            : 'You must clock in today before you can clock out.',
+      );
+      setClockState('error');
+      return null;
+    }
 
     setError(null);
     setClockState('authenticating');
@@ -147,5 +188,6 @@ export function useAttendance() {
     performClock,
     reset,
     refreshQueuedCount,
+    refreshTodayStatus,
   };
 }
