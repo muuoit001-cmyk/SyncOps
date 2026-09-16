@@ -20,7 +20,6 @@ app.set('trust proxy', 1);
 if (process.env.NODE_ENV === 'production') {
   const weakSecrets = [
     ['JWT_SECRET', process.env.JWT_SECRET],
-    ['JWT_REFRESH_SECRET', process.env.JWT_REFRESH_SECRET],
   ].filter(([, value]) => !value || value.length < 32 || value.includes('change-in-production'));
   if (weakSecrets.length) {
     throw new Error(`Refusing to start with weak production secrets: ${weakSecrets.map(([name]) => name).join(', ')}`);
