@@ -72,7 +72,8 @@ router.post(
       });
     } catch (err) {
       console.error('enroll error:', err);
-      res.status(500).json({ error: 'Enrollment failed' });
+      if (err.code === '23505') return res.status(409).json({ error: 'This device is already enrolled or the employee already has a conflicting device record.' });
+      res.status(500).json({ error: process.env.NODE_ENV === 'production' ? 'Enrollment failed' : `Enrollment failed: ${err.message}` });
     }
   }
 );

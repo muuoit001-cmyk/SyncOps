@@ -29,6 +29,17 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
  * @returns {{ within: boolean, distanceM: number }}
  */
 function isWithinFence(point, site) {
+  if (Array.isArray(site.polygon_coordinates) && site.polygon_coordinates.length >= 3) {
+    let inside = false;
+    for (let i = 0, j = site.polygon_coordinates.length - 1; i < site.polygon_coordinates.length; j = i++) {
+      const a = site.polygon_coordinates[i];
+      const b = site.polygon_coordinates[j];
+      const intersects = ((a.lng > point.lng) !== (b.lng > point.lng))
+        && point.lat < ((b.lat - a.lat) * (point.lng - a.lng)) / (b.lng - a.lng) + a.lat;
+      if (intersects) inside = !inside;
+    }
+    return { within: inside, distanceM: inside ? 0 : null };
+  }
   const distanceM = haversineDistance(point.lat, point.lng, site.lat, site.lng);
   return {
     within: distanceM <= site.radius_meters,

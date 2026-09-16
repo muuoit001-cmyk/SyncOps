@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Animated, Dimensions,
-  StatusBar, ScrollView,
+  StatusBar, ScrollView, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
@@ -24,7 +24,7 @@ const OfflineBanner: React.FC<OfflineBannerProps> = ({ count }) => (
 );
 
 const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { session } = useSessionStore();
+  const { session, clearSession } = useSessionStore();
   const { status: fenceStatus, distanceM, accuracy, siteName, recheck } = useGeofence();
   const {
     clockState, error, confirmedAt, isOffline, queuedCount,
@@ -105,6 +105,13 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     await performClock(nextAction as ClockAction, currentLocation);
   };
 
+  const handleLogout = () => {
+    Alert.alert('Log out', 'You will need to enroll this device again before clocking in.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Log out', style: 'destructive', onPress: () => clearSession() },
+    ]);
+  };
+
   // ── Button state derivation ───────────────────────────────────────────────
   const isCompletedToday = nextAction === 'completed';
 
@@ -160,6 +167,14 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               📍 {siteName || session?.siteName}
             </Text>
           )}
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+            accessibilityRole="button"
+            accessibilityLabel="Log out"
+          >
+            <Text style={styles.logoutButtonText}>Log out</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Central clock button */}
@@ -319,6 +334,19 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.textMuted,
     marginTop: 4,
+  },
+  logoutButton: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  logoutButtonText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.xs,
+    fontWeight: '600',
   },
   buttonArea: { alignItems: 'center', marginBottom: spacing.xl },
   clockButton: {

@@ -6,7 +6,7 @@ const pool = require('../db/pool');
  *
  * Expects headers:
  *   X-Device-Id: <device UUID>
- *   X-Device-Sig: <HMAC-SHA256 of (device_id + ':' + timestamp + ':' + body_json)>
+ *   X-Device-Sig: <base64 Ed25519 signature, or legacy HMAC hex>
  *   X-Timestamp:  <unix ms> (must be within ±30s of server time)
  *
  * Attaches req.device and req.staffMember on success.
@@ -46,14 +46,22 @@ async function deviceAuth(req, res, next) {
 
     const bodyStr = JSON.stringify(req.body && typeof req.body === 'object' ? req.body : {});
     const payload = `${deviceId}:${tsHeader}:${bodyStr}`;
-    const expected = crypto
-      .createHmac('sha256', device.device_token)
-      .update(payload)
-      .digest('hex');
-
-    const sigBuf = Buffer.from(String(sig), 'hex');
-    const expectedBuf = Buffer.from(expected, 'hex');
-    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+    const isEd25519 = String(req.headers['x-device-sig-alg'] || '').toLowerCase() === 'ed25519';
+    let validSignature = false;
+    if (isEd25519 && device.public_key_b64) {
+      validSignature = crypto.verify(
+        null,
+        Buffer.from(payload),
+        { key: Buffer.from(device.public_key_b64, 'base64'), format: 'der', type: 'spki' },
+        Buffer.from(String(sig), 'base64'),
+      );
+    } else {
+      const expected = crypto.createHmac('sha256', device.device_token).update(payload).digest('hex');
+      const sigBuf = Buffer.from(String(sig), 'hex');
+      const expectedBuf = Buffer.from(expected, 'hex');
+      validSignature = sigBuf.length === expectedBuf.length && crypto.timingSafeEqual(sigBuf, expectedBuf);
+    }
+    if (!validSignature) {
       return res.status(401).json({ error: 'Invalid device signature' });
     }
 

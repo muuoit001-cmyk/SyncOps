@@ -17,7 +17,7 @@ const EnrollDoneScreen: React.FC<Props> = ({ navigation }) => (
       <Text style={styles.title}>You're all set!</Text>
       <Text style={styles.description}>
         Your device is enrolled. From now on, just open SyncOps and
-        tap the big button — your fingerprint or face is all you need.
+        tap the big button — your fingerprint is all you need.
       </Text>
 
       <TouchableOpacity

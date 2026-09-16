@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as LocalAuthentication from 'expo-local-authentication';
 import Constants from 'expo-constants';
 import { colors, spacing, radius, fontSize, shadow } from '../../constants/theme';
-import api from '../../services/api';
+import api, { createDeviceKeyPair } from '../../services/api';
 import { useSessionStore } from '../../store/sessionStore';
 import { getBiometricCapabilities } from '../../hooks/useBiometric';
 
@@ -20,10 +20,14 @@ const EnrollBiometricScreen: React.FC<Props> = ({ navigation, route }) => {
   const { saveSession } = useSessionStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [biometricType, setBiometricType] = useState<'fingerprint' | 'face' | 'iris' | 'none'>('none');
+  const [biometricType, setBiometricType] = useState<'fingerprint' | 'none'>('none');
+  const [capabilitiesLoaded, setCapabilitiesLoaded] = useState(false);
 
   useEffect(() => {
-    getBiometricCapabilities().then(c => setBiometricType(c.type));
+    getBiometricCapabilities().then(c => {
+      setBiometricType(c.type);
+      setCapabilitiesLoaded(true);
+    });
   }, []);
 
   const handleEnroll = async () => {
@@ -31,11 +35,16 @@ const EnrollBiometricScreen: React.FC<Props> = ({ navigation, route }) => {
     setError('');
 
     try {
+      if (biometricType !== 'fingerprint') {
+        setError('A fingerprint is required. Add a fingerprint in your device security settings, then return here. Face ID and PIN are not supported for SyncOps attendance.');
+        return;
+      }
+
       // Step 1: Verify biometric works before registering device
       const authResult = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Verify your identity to complete enrollment',
+        promptMessage: 'Touch the fingerprint sensor to complete enrollment',
         cancelLabel: 'Cancel',
-        disableDeviceFallback: false,
+        disableDeviceFallback: true,
         requireConfirmation: false,
       });
 
@@ -48,17 +57,20 @@ const EnrollBiometricScreen: React.FC<Props> = ({ navigation, route }) => {
       // Step 2: Register device with server
       const deviceLabel = `${Constants.deviceName || 'Device'} (${biometricType})`;
       const platform = Constants.platform?.ios ? 'ios' : 'android';
+      const keyPair = await createDeviceKeyPair();
 
       const { data } = await api.post('/devices/enroll', {
         staff_id: staffData.id,
         device_label: deviceLabel,
         platform,
+        public_key_b64: keyPair.publicKeyB64,
       });
 
       // Step 3: Persist session securely
       await saveSession({
         deviceId: data.deviceId,
         deviceToken: data.deviceToken, // stored only in SecureStore, never logged
+        privateKeyB64: keyPair.privateKeyB64,
         staffId: staffData.id,
         employeeId: staffData.employee_id,
         fullName: staffData.full_name,
@@ -77,14 +89,15 @@ const EnrollBiometricScreen: React.FC<Props> = ({ navigation, route }) => {
         navigation.replace('EnrollDone');
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Enrollment failed. Please try again.');
+      setError(err.response?.data?.error || err.message || 'Enrollment failed. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const biometricIcon = biometricType === 'face' ? '🔐' : biometricType === 'fingerprint' ? '👆' : '🔒';
-  const biometricLabel = biometricType === 'face' ? 'Face ID' : biometricType === 'fingerprint' ? 'Fingerprint' : 'Biometric';
+  const biometricIcon = biometricType === 'fingerprint' ? '👆' : '🔒';
+  const biometricLabel = 'Fingerprint';
+  const fingerprintReady = capabilitiesLoaded && biometricType === 'fingerprint';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -104,9 +117,14 @@ const EnrollBiometricScreen: React.FC<Props> = ({ navigation, route }) => {
 
         <Text style={styles.title}>Register {biometricLabel}</Text>
         <Text style={styles.description}>
-          Your biometric data stays on your device and is never sent to our servers.
-          It will be used to confirm clock-in and clock-out actions.
+          SyncOps uses your enrolled fingerprint only. You can register one or two fingerprints in device Settings and switch between them if needed. Fingerprint data stays on your device and is never sent to our servers.
         </Text>
+
+        {capabilitiesLoaded && !fingerprintReady ? (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>Fingerprint hardware or enrollment was not detected. Add a fingerprint in device Settings. Face ID and PIN cannot be used for attendance.</Text>
+          </View>
+        ) : null}
 
         {error ? (
           <View style={styles.errorBox}>
@@ -117,7 +135,7 @@ const EnrollBiometricScreen: React.FC<Props> = ({ navigation, route }) => {
         <TouchableOpacity
           style={[styles.btn, loading && styles.btnDisabled]}
           onPress={handleEnroll}
-          disabled={loading}
+          disabled={loading || !fingerprintReady}
           accessibilityRole="button"
           accessibilityLabel={`Register ${biometricLabel}`}
         >

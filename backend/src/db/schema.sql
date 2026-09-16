@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS sites (
   lat            DOUBLE PRECISION NOT NULL,
   lng            DOUBLE PRECISION NOT NULL,
   radius_meters  INTEGER NOT NULL DEFAULT 100,
+  polygon_coordinates JSONB,
   is_active      BOOLEAN NOT NULL DEFAULT TRUE,
   created_by     UUID REFERENCES hr_users(id),
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -103,6 +104,48 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS shifts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name VARCHAR(255) NOT NULL,
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
+  grace_minutes INTEGER NOT NULL DEFAULT 0,
+  overtime_after_minutes INTEGER NOT NULL DEFAULT 480,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by UUID REFERENCES hr_users(id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS staff_shifts (
+  staff_id UUID PRIMARY KEY REFERENCES staff(id) ON DELETE CASCADE,
+  shift_id UUID NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
+  effective_from DATE NOT NULL DEFAULT CURRENT_DATE
+);
+
+CREATE TABLE IF NOT EXISTS notification_tokens (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  staff_id UUID REFERENCES staff(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES hr_users(id) ON DELETE CASCADE,
+  token TEXT NOT NULL UNIQUE,
+  platform VARCHAR(32) NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES hr_users(id) ON DELETE CASCADE,
+  staff_id UUID REFERENCES staff(id) ON DELETE CASCADE,
+  type VARCHAR(64) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  body TEXT NOT NULL,
+  data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ── Indexes ─────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_attendance_staff_id ON attendance_logs(staff_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_timestamp ON attendance_logs(timestamp_utc DESC);
@@ -110,6 +153,7 @@ CREATE INDEX IF NOT EXISTS idx_attendance_flagged ON attendance_logs(is_flagged)
 CREATE INDEX IF NOT EXISTS idx_staff_employee_id ON staff(employee_id);
 CREATE INDEX IF NOT EXISTS idx_staff_site_id ON staff(site_id);
 CREATE INDEX IF NOT EXISTS idx_devices_staff_id ON devices(staff_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, created_at DESC) WHERE read_at IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_staff_action_day
   ON attendance_logs (staff_id, action, ((timezone('UTC', timestamp_utc))::date));
 

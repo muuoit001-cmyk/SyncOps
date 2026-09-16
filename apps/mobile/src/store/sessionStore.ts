@@ -5,6 +5,7 @@ import { create } from 'zustand';
 export interface SessionData {
   deviceId: string;
   deviceToken: string;
+  privateKeyB64?: string;
   staffId: string;
   employeeId: string;
   fullName: string;
@@ -47,6 +48,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   clearSession: async () => {
     await SecureStore.deleteItemAsync(SESSION_KEY);
+    await AsyncStorage.removeItem('syncops_last_action');
+    await AsyncStorage.removeItem('syncops_offline_queue');
     set({ session: null });
   },
 }));

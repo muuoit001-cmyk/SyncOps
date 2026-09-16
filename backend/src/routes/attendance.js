@@ -86,7 +86,7 @@ router.post('/clock', deviceAuth, async (req, res) => {
     let siteRow = null;
     if (req.staffMember.site_id) {
       const { rows } = await pool.query(
-        'SELECT id, name, lat, lng, radius_meters FROM sites WHERE id = $1 AND is_active = true',
+        'SELECT id, name, lat, lng, radius_meters, polygon_coordinates FROM sites WHERE id = $1 AND is_active = true',
         [req.staffMember.site_id]
       );
       siteRow = rows[0] || null;
@@ -160,6 +160,14 @@ router.post('/clock', deviceAuth, async (req, res) => {
     }
 
     const log = logRows[0];
+    if (isFlagged) {
+      pool.query(
+        `INSERT INTO notifications (id, user_id, type, title, body, data)
+         SELECT $1, id, 'flagged_attendance', 'Flagged attendance event', $2, $3::jsonb
+         FROM hr_users WHERE is_active = true`,
+        [uuidv4(), `${req.staffMember.full_name} generated a flagged ${action.replace('_', ' ')} event.`, JSON.stringify({ logId: log.id, staffId: req.staffMember.id })],
+      ).catch((notificationError) => console.error('notification create error:', notificationError));
+    }
     res.status(201).json({
       ok: true,
       logId: log.id,
@@ -358,13 +366,19 @@ router.get('/dashboard', async (req, res) => {
     );
     const present = parseInt(presentRows[0].count);
 
-    // Late (clock-in after 09:00)
-    const lateThreshold = new Date(today);
-    lateThreshold.setHours(9, 0, 0, 0);
+    // Late according to the assigned shift; unassigned staff retain a 09:00 fallback.
     const { rows: lateRows } = await pool.query(
-      `SELECT COUNT(DISTINCT staff_id) FROM attendance_logs
-       WHERE action = 'clock_in' AND timestamp_utc >= $1 AND timestamp_utc < $2`,
-      [lateThreshold.toISOString(), tomorrow.toISOString()]
+      `SELECT COUNT(DISTINCT al.staff_id) FROM attendance_logs al
+       JOIN staff s ON s.id = al.staff_id
+       LEFT JOIN staff_shifts ss ON ss.staff_id = s.id
+       LEFT JOIN shifts sh ON sh.id = ss.shift_id AND sh.is_active = true
+       WHERE al.action = 'clock_in' AND al.timestamp_utc >= $1 AND al.timestamp_utc < $2
+         AND (CASE WHEN sh.id IS NULL
+             THEN (al.timestamp_utc AT TIME ZONE 'UTC')::time > TIME '09:00'
+             ELSE (al.timestamp_utc AT TIME ZONE COALESCE(sh.timezone, 'UTC'))::time
+               > sh.start_time + (sh.grace_minutes * INTERVAL '1 minute')
+           END)`,
+      [today.toISOString(), tomorrow.toISOString()]
     );
     const late = parseInt(lateRows[0].count);
 

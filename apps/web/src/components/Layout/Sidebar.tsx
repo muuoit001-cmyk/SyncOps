@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, MapPin, ClipboardList,
-  AlertTriangle, ChevronLeft, ChevronRight, Zap,
+  AlertTriangle, ChevronLeft, ChevronRight, Zap, BarChart3,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -18,6 +18,7 @@ const navItems = [
   { label: 'Sites & Geofences', icon: MapPin, path: '/sites' },
   { label: 'Attendance Log', icon: ClipboardList, path: '/attendance' },
   { label: 'Flagged Events', icon: AlertTriangle, path: '/flagged', badge: true },
+  { label: 'Analytics', icon: BarChart3, path: '/analytics' },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, mobileOpen, flaggedCount = 0 }) => {

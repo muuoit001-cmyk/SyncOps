@@ -10,6 +10,7 @@ import Staff from './pages/Staff';
 import Sites from './pages/Sites';
 import Attendance from './pages/Attendance';
 import Flagged from './pages/Flagged';
+import Analytics from './pages/Analytics';
 
 import AuthCallback from './pages/AuthCallback';
 import ResetPassword from './pages/ResetPassword';
@@ -20,6 +21,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/sites': 'Sites & Geofences',
   '/attendance': 'Attendance Log',
   '/flagged': 'Flagged Events',
+  '/analytics': 'Analytics',
 };
 
 const ProtectedLayout: React.FC = () => {
@@ -63,6 +65,7 @@ const ProtectedLayout: React.FC = () => {
             <Route path="/sites" element={<Sites />} />
             <Route path="/attendance" element={<Attendance />} />
             <Route path="/flagged" element={<Flagged />} />
+            <Route path="/analytics" element={<Analytics />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>

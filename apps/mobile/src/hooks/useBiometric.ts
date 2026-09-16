@@ -1,7 +1,7 @@
 import * as LocalAuthentication from 'expo-local-authentication';
 import { useCallback } from 'react';
 
-export type BiometricType = 'fingerprint' | 'face' | 'iris' | 'none';
+export type BiometricType = 'fingerprint' | 'none';
 
 interface BiometricCapabilities {
   isAvailable: boolean;
@@ -17,9 +17,7 @@ export async function getBiometricCapabilities(): Promise<BiometricCapabilities>
   const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
 
   let type: BiometricType = 'none';
-  if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
-    type = 'face';
-  } else if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+  if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
     type = 'fingerprint';
   }
 
@@ -35,10 +33,12 @@ export async function getBiometricCapabilities(): Promise<BiometricCapabilities>
 export async function promptBiometric(action: 'clock_in' | 'clock_out'): Promise<boolean> {
   const label = action === 'clock_in' ? 'Confirm Clock In' : 'Confirm Clock Out';
   try {
+    const supportedTypes = await LocalAuthentication.supportedAuthenticationTypesAsync();
+    if (!supportedTypes.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) return false;
     const result = await LocalAuthentication.authenticateAsync({
       promptMessage: label,
       cancelLabel: 'Cancel',
-      disableDeviceFallback: false, // allow PIN fallback
+      disableDeviceFallback: true,
       requireConfirmation: false,    // fastest path — no extra tap needed
     });
     return result.success;

@@ -11,6 +11,37 @@ async function ensureSchema() {
   `);
 
   await pool.query(`
+    ALTER TABLE sites
+      ADD COLUMN IF NOT EXISTS polygon_coordinates JSONB;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS shifts (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), name VARCHAR(255) NOT NULL,
+      start_time TIME NOT NULL, end_time TIME NOT NULL, timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
+      grace_minutes INTEGER NOT NULL DEFAULT 0, overtime_after_minutes INTEGER NOT NULL DEFAULT 480,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE, created_by UUID REFERENCES hr_users(id), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS staff_shifts (
+      staff_id UUID PRIMARY KEY REFERENCES staff(id) ON DELETE CASCADE,
+      shift_id UUID NOT NULL REFERENCES shifts(id) ON DELETE CASCADE,
+      effective_from DATE NOT NULL DEFAULT CURRENT_DATE
+    );
+    CREATE TABLE IF NOT EXISTS notification_tokens (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), staff_id UUID REFERENCES staff(id) ON DELETE CASCADE,
+      user_id UUID REFERENCES hr_users(id) ON DELETE CASCADE, token TEXT NOT NULL UNIQUE,
+      platform VARCHAR(32) NOT NULL, is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_used_at TIMESTAMPTZ
+    );
+    CREATE TABLE IF NOT EXISTS notifications (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), user_id UUID REFERENCES hr_users(id) ON DELETE CASCADE,
+      staff_id UUID REFERENCES staff(id) ON DELETE CASCADE, type VARCHAR(64) NOT NULL,
+      title VARCHAR(255) NOT NULL, body TEXT NOT NULL, data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      read_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_hr_users_auth_user_id
       ON hr_users (auth_user_id)
       WHERE auth_user_id IS NOT NULL;

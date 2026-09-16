@@ -71,6 +71,7 @@ export function useAttendance() {
         {},
         session.deviceId,
         session.deviceToken,
+        session.privateKeyB64,
       );
       return data as {
         hasClockIn: boolean;
@@ -111,10 +112,16 @@ export function useAttendance() {
     setClockState('authenticating');
 
     // Step 1: Biometric auth (~2s budget)
+    const supportedTypes = await LocalAuthentication.supportedAuthenticationTypesAsync();
+    if (!supportedTypes.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+      setError('Fingerprint authentication is required for clock-in and clock-out.');
+      setClockState('error');
+      return null;
+    }
     const authResult = await LocalAuthentication.authenticateAsync({
       promptMessage: action === 'clock_in' ? 'Confirm Clock In' : 'Confirm Clock Out',
       cancelLabel: 'Cancel',
-      disableDeviceFallback: false,
+      disableDeviceFallback: true,
       requireConfirmation: false,
     });
 
@@ -156,6 +163,7 @@ export function useAttendance() {
         payload,
         session.deviceId,
         session.deviceToken,
+        session.privateKeyB64,
       );
 
       await setLastAction({ action, timestamp: data.timestamp });
@@ -168,6 +176,11 @@ export function useAttendance() {
 
       return { timestamp: data.timestamp, offline: false, isFlagged: data.isFlagged };
     } catch (err: any) {
+      if (err.response?.status === 401 && err.response?.data?.error === 'Invalid device signature') {
+        setClockState('error');
+        setError('This device session is no longer valid. Use Log out, then enroll your fingerprint again.');
+        return null;
+      }
       setClockState('error');
       setError(err.response?.data?.error || 'Clock action failed. Try again.');
       return null;

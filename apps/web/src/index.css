@@ -29,6 +29,19 @@
   --shadow-lg:           0 10px 15px -3px rgb(0 0 0 / 0.07), 0 4px 6px -4px rgb(0 0 0 / 0.07);
 }
 
+[data-theme='dark'] {
+  --color-bg:            #0F172A;
+  --color-surface:       #172033;
+  --color-border:        #334155;
+  --color-text-primary:  #F8FAFC;
+  --color-text-secondary:#CBD5E1;
+  --color-text-muted:    #94A3B8;
+  --color-primary-light: #1E3A8A;
+  --color-success-light: #14532D;
+  --color-warning-light: #78350F;
+  --color-error-light:   #7F1D1D;
+}
+
 /* ── Base ──────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 

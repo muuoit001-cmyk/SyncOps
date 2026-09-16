@@ -10,6 +10,9 @@ const sitesRoutes = require('./routes/sites');
 const attendanceRoutes = require('./routes/attendance');
 const devicesRoutes = require('./routes/devices');
 const { ensureSchema } = require('./db/ensureSchema');
+const shiftsRoutes = require('./routes/shifts');
+const notificationsRoutes = require('./routes/notifications');
+const analyticsRoutes = require('./routes/analytics');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -76,6 +79,9 @@ app.use('/api/sites', sitesRoutes);
 app.use('/api/attendance/clock', clockLimiter); // apply clock limiter first
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/devices', devicesRoutes);
+app.use('/api/shifts', shiftsRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {

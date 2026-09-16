@@ -1,6 +1,7 @@
 import axios from 'axios';
 import * as Crypto from 'expo-crypto';
 import Constants from 'expo-constants';
+import nacl from 'tweetnacl';
 
 function getBaseUrl(): string {
   const configured = Constants.expoConfig?.extra?.apiUrl || process.env.EXPO_PUBLIC_API_URL;
@@ -33,6 +34,57 @@ const api = axios.create({
 
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let result = '';
+  for (let index = 0; index < bytes.length; index += 3) {
+    const first = bytes[index];
+    const second = bytes[index + 1];
+    const third = bytes[index + 2];
+    result += alphabet[first >> 2];
+    result += alphabet[((first & 3) << 4) | ((second ?? 0) >> 4)];
+    result += second === undefined ? '=' : alphabet[((second & 15) << 2) | ((third ?? 0) >> 6)];
+    result += third === undefined ? '=' : alphabet[third & 63];
+  }
+  return result;
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const clean = value.replace(/=+$/, '');
+  const bytes: number[] = [];
+  let buffer = 0;
+  let bits = 0;
+  for (const char of clean) {
+    buffer = (buffer << 6) | alphabet.indexOf(char);
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes.push((buffer >> bits) & 255);
+    }
+  }
+  return new Uint8Array(bytes);
+}
+
+function ed25519PublicKeyToSpki(publicKey: Uint8Array): Uint8Array {
+  const prefix = new Uint8Array([0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00]);
+  const result = new Uint8Array(prefix.length + publicKey.length);
+  result.set(prefix);
+  result.set(publicKey, prefix.length);
+  return result;
+}
+
+export async function createDeviceKeyPair() {
+  // Expo exposes secure randomness asynchronously; deriving from a seed avoids
+  // tweetnacl's synchronous PRNG requirement in React Native.
+  const seed = await Crypto.getRandomBytesAsync(32);
+  const keyPair = nacl.sign.keyPair.fromSeed(seed);
+  return {
+    publicKeyB64: bytesToBase64(ed25519PublicKeyToSpki(keyPair.publicKey)),
+    privateKeyB64: bytesToBase64(keyPair.secretKey),
+  };
 }
 
 async function hmacSha256Hex(secret: string, message: string): Promise<string> {
@@ -106,12 +158,15 @@ export async function signedRequest(
   body: Record<string, unknown>,
   deviceId: string,
   deviceToken: string,
+  privateKeyB64?: string,
 ) {
   const timestamp = String(Date.now());
   const payloadBody = body && Object.keys(body).length ? body : {};
   const bodyStr = JSON.stringify(payloadBody);
   const payload = `${deviceId}:${timestamp}:${bodyStr}`;
-  const sig = await hmacSha256Hex(deviceToken, payload);
+  const sig = privateKeyB64
+    ? bytesToBase64(nacl.sign.detached(new TextEncoder().encode(payload), base64ToBytes(privateKeyB64)))
+    : await hmacSha256Hex(deviceToken, payload);
 
   return api.request({
     method,
@@ -120,6 +175,7 @@ export async function signedRequest(
     headers: {
       'X-Device-Id': deviceId,
       'X-Device-Sig': sig,
+      ...(privateKeyB64 ? { 'X-Device-Sig-Alg': 'Ed25519' } : {}),
       'X-Timestamp': timestamp,
       'Content-Type': 'application/json',
     },

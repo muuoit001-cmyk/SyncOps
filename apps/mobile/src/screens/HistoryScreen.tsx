@@ -66,7 +66,7 @@ const HistoryScreen: React.FC = () => {
     const days = period === 'week' ? 7 : 30;
     const since = new Date(Date.now() - days * 86400000).toISOString();
 
-    signedRequest('GET', `/attendance/me?since=${since}`, {}, session.deviceId, session.deviceToken)
+    signedRequest('GET', `/attendance/me?since=${since}`, {}, session.deviceId, session.deviceToken, session.privateKeyB64)
       .then(({ data }) => {
         setGroups(groupByDay(data));
       })

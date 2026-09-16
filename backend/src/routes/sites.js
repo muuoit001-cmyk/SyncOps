@@ -11,7 +11,7 @@ const router = express.Router();
 router.get('/:id/geofence', async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT id, name, lat, lng, radius_meters FROM sites WHERE id = $1 AND is_active = true',
+      'SELECT id, name, lat, lng, radius_meters, polygon_coordinates FROM sites WHERE id = $1 AND is_active = true',
       [req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Site not found' });
@@ -62,6 +62,7 @@ router.post(
     body('lat').isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90'),
     body('lng').isFloat({ min: -180, max: 180 }).withMessage('Longitude must be between -180 and 180'),
     body('radius_meters').isInt({ min: 10, max: 5000 }).withMessage('Radius must be between 10 and 5000 meters'),
+    body('polygon_coordinates').optional().isArray({ min: 3 }).withMessage('Polygon geofence needs at least 3 points'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -69,12 +70,15 @@ router.post(
       return res.status(400).json({ error: errors.array()[0].msg, errors: errors.array() });
     }
 
-    const { name, address, lat, lng, radius_meters } = req.body;
+    const { name, address, lat, lng, radius_meters, polygon_coordinates } = req.body;
+    if (polygon_coordinates && polygon_coordinates.some((p) => !Number.isFinite(Number(p.lat)) || !Number.isFinite(Number(p.lng)))) {
+      return res.status(400).json({ error: 'Polygon points must contain valid latitude and longitude values' });
+    }
     try {
       const { rows } = await pool.query(
-        `INSERT INTO sites (id, name, address, lat, lng, radius_meters, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-        [uuidv4(), name.trim(), address?.trim() || null, parseFloat(lat), parseFloat(lng), parseInt(radius_meters), req.hrUser?.id || null]
+        `INSERT INTO sites (id, name, address, lat, lng, radius_meters, polygon_coordinates, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [uuidv4(), name.trim(), address?.trim() || null, parseFloat(lat), parseFloat(lng), parseInt(radius_meters), polygon_coordinates || null, req.hrUser?.id || null]
       );
       res.status(201).json(rows[0]);
     } catch (err) {
@@ -92,6 +96,7 @@ router.patch(
     body('lat').optional().isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90'),
     body('lng').optional().isFloat({ min: -180, max: 180 }).withMessage('Longitude must be between -180 and 180'),
     body('radius_meters').optional().isInt({ min: 10, max: 5000 }).withMessage('Radius must be between 10 and 5000 meters'),
+    body('polygon_coordinates').optional().isArray({ min: 3 }).withMessage('Polygon geofence needs at least 3 points'),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -99,7 +104,7 @@ router.patch(
       return res.status(400).json({ error: errors.array()[0].msg, errors: errors.array() });
     }
 
-    const allowed = ['name', 'address', 'lat', 'lng', 'radius_meters'];
+    const allowed = ['name', 'address', 'lat', 'lng', 'radius_meters', 'polygon_coordinates'];
     const updates = [];
     const values = [];
     let idx = 1;

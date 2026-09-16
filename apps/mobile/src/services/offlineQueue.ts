@@ -81,6 +81,7 @@ export async function syncOfflineQueue(): Promise<{ synced: number; failed: numb
         },
         session.deviceId,
         session.deviceToken,
+        session.privateKeyB64,
       );
       await removeFromQueue(item.id);
       synced++;
