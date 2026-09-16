@@ -40,7 +40,7 @@
       "expo-secure-store"
     ],
     "extra": {
-      "apiUrl": "http://localhost:3001/api"
+      "apiUrl": "https://syncops-backend-production.up.railway.app"
     }
   }
 }
