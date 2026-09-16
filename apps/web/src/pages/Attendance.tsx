@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Download, Filter, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
+import { Download, Filter, ChevronDown, ChevronUp, AlertTriangle, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import toast from 'react-hot-toast';
 import api from '../services/api';
 import type { AttendanceLog, Site, StaffMember } from '../types';
 
@@ -71,18 +72,40 @@ const Attendance: React.FC = () => {
     });
   }, []);
 
-  const handleExport = async () => {
-    const params: Record<string, string> = {};
-    if (from) params.from = `${from}T00:00:00Z`;
-    if (to) params.to = `${to}T23:59:59Z`;
-    if (staffFilter) params.staff_id = staffFilter;
-    if (siteFilter) params.site_id = siteFilter;
-    if (flaggedOnly) params.flagged = 'true';
+  const [exporting, setExporting] = useState(false);
 
-    const query = new URLSearchParams(params).toString();
-    const link = document.createElement('a');
-    link.href = `/api/attendance/export?${query}`;
-    link.click();
+  const handleExport = async () => {
+    setExporting(true);
+    const toastId = toast.loading('Exporting attendance records...');
+    try {
+      const params: Record<string, string> = {};
+      if (from) params.from = `${from}T00:00:00Z`;
+      if (to) params.to = `${to}T23:59:59Z`;
+      if (staffFilter) params.staff_id = staffFilter;
+      if (siteFilter) params.site_id = siteFilter;
+      if (flaggedOnly) params.flagged = 'true';
+
+      const response = await api.get('/attendance/export', {
+        params,
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `syncops_attendance_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('Attendance CSV exported successfully!', { id: toastId });
+    } catch (err: any) {
+      console.error('Export error:', err);
+      toast.error(err.response?.data?.error || 'Failed to export CSV', { id: toastId });
+    } finally {
+      setExporting(false);
+    }
   };
 
   const handleSort = (field: string) => {

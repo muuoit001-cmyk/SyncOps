@@ -46,7 +46,9 @@ export function useGeofence(): GeofenceResult {
       return;
     }
 
+    const currentSiteId = session.siteId;
     let cancelled = false;
+
 
     async function check() {
       setStatus('checking');
@@ -75,7 +77,7 @@ export function useGeofence(): GeofenceResult {
         if (!cancelled) setAccuracy(acc);
 
         // Fetch site geofence
-        const { data: site } = await api.get(`/sites/${session.siteId}/geofence`);
+        const { data: site } = await api.get(`/sites/${currentSiteId}/geofence`);
         if (!cancelled) setSiteName(site.name);
 
         // Haversine on client (mirrors server check — but server is authoritative)

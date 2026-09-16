@@ -16,7 +16,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-// ── Map click handler ──────────────────────────────────────────────────────
+// ── Map helper components ──────────────────────────────────────────────────
 interface MapClickHandlerProps {
   onMapClick: (lat: number, lng: number) => void;
 }
@@ -25,6 +25,17 @@ const MapClickHandler: React.FC<MapClickHandlerProps> = ({ onMapClick }) => {
   useMapEvents({
     click: (e: { latlng: { lat: number; lng: number } }) => onMapClick(e.latlng.lat, e.latlng.lng),
   });
+  return null;
+};
+
+const MapResizer: React.FC = () => {
+  const map = useMap();
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [map]);
   return null;
 };
 
@@ -55,8 +66,9 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
       setMapCenter([site.lat, site.lng]);
       setMarkerPos([site.lat, site.lng]);
     } else {
-      setForm({ name: '', address: '', lat: '', lng: '', radius_meters: '100' });
-      setMarkerPos(null);
+      setForm({ name: '', address: '', lat: '-1.292100', lng: '36.821900', radius_meters: '100' });
+      setMapCenter([-1.2921, 36.8219]);
+      setMarkerPos([-1.2921, 36.8219]);
     }
     setError('');
   }, [site, open]);
@@ -66,17 +78,46 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
     setForm(f => ({ ...f, lat: lat.toFixed(6), lng: lng.toFixed(6) }));
   };
 
+  const handleLatChange = (val: string) => {
+    setForm(f => ({ ...f, lat: val }));
+    const pLat = parseFloat(val);
+    const pLng = parseFloat(form.lng);
+    if (!isNaN(pLat) && !isNaN(pLng)) {
+      setMarkerPos([pLat, pLng]);
+    }
+  };
+
+  const handleLngChange = (val: string) => {
+    setForm(f => ({ ...f, lng: val }));
+    const pLat = parseFloat(form.lat);
+    const pLng = parseFloat(val);
+    if (!isNaN(pLat) && !isNaN(pLng)) {
+      setMarkerPos([pLat, pLng]);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+
+    const latVal = parseFloat(form.lat);
+    const lngVal = parseFloat(form.lng);
+    const radVal = parseInt(form.radius_meters, 10);
+
+    if (isNaN(latVal) || isNaN(lngVal)) {
+      setError('Please provide valid latitude and longitude coordinates.');
+      setLoading(false);
+      return;
+    }
+
     try {
       const payload = {
-        name: form.name,
-        address: form.address || undefined,
-        lat: parseFloat(form.lat),
-        lng: parseFloat(form.lng),
-        radius_meters: parseInt(form.radius_meters),
+        name: form.name.trim(),
+        address: form.address.trim() || undefined,
+        lat: latVal,
+        lng: lngVal,
+        radius_meters: isNaN(radVal) ? 100 : radVal,
       };
       if (site) {
         await api.patch(`/sites/${site.id}`, payload);
@@ -86,7 +127,8 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
       onSaved();
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to save site');
+      console.error('Site save error:', err);
+      setError(err.response?.data?.error || err.message || 'Failed to save site');
     } finally {
       setLoading(false);
     }
@@ -95,6 +137,7 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
   if (!open) return null;
 
   const radius = parseFloat(form.radius_meters) || 100;
+  const currentCenter: [number, number] = markerPos || mapCenter || [-1.2921, 36.8219];
 
   return (
     <>
@@ -125,13 +168,14 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
 
             {/* Map */}
             <div className="form-group">
-              <label className="form-label">Location — click on the map to set pin</label>
-              <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1.5px solid var(--color-border)' }}>
-                  <MapContainer
-                    center={markerPos}
-                    zoom={14}
-                    style={{ height: 240 }}
-                  >
+              <label className="form-label">Location — click on the map to set pin or enter coordinates</label>
+              <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1.5px solid var(--color-border)', position: 'relative' }}>
+                <MapContainer
+                  center={currentCenter}
+                  zoom={14}
+                  style={{ height: 260 }}
+                >
+                  <MapResizer />
                   <TileLayer
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -143,22 +187,25 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
                       <Circle
                         center={markerPos}
                         radius={radius}
-                        pathOptions={{ color: '#2563EB', fillColor: '#2563EB', fillOpacity: 0.12 }}
+                        pathOptions={{ color: '#2563EB', fillColor: '#2563EB', fillOpacity: 0.15 }}
                       />
                     </>
                   )}
                 </MapContainer>
               </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 4, display: 'block' }}>
+                💡 Click anywhere on the map to drop the geofence center pin.
+              </span>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
               <div className="form-group">
                 <label htmlFor="site-lat" className="form-label">Latitude *</label>
-                <input id="site-lat" className="form-input" value={form.lat} onChange={e => setForm(f => ({ ...f, lat: e.target.value }))} placeholder="-1.292100" required />
+                <input id="site-lat" className="form-input" value={form.lat} onChange={e => handleLatChange(e.target.value)} placeholder="-1.292100" required />
               </div>
               <div className="form-group">
                 <label htmlFor="site-lng" className="form-label">Longitude *</label>
-                <input id="site-lng" className="form-input" value={form.lng} onChange={e => setForm(f => ({ ...f, lng: e.target.value }))} placeholder="36.821900" required />
+                <input id="site-lng" className="form-input" value={form.lng} onChange={e => handleLngChange(e.target.value)} placeholder="36.821900" required />
               </div>
             </div>
 
@@ -167,13 +214,13 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
               <input
                 id="site-radius"
                 type="range"
-                min={10} max={500} step={10}
+                min={10} max={1000} step={10}
                 value={form.radius_meters}
                 onChange={e => setForm(f => ({ ...f, radius_meters: e.target.value }))}
                 style={{ width: '100%', accentColor: 'var(--color-primary)' }}
               />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>
-                <span>10m</span><span>500m</span>
+                <span>10m</span><span>1000m</span>
               </div>
             </div>
           </div>

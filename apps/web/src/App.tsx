@@ -11,6 +11,9 @@ import Sites from './pages/Sites';
 import Attendance from './pages/Attendance';
 import Flagged from './pages/Flagged';
 
+import AuthCallback from './pages/AuthCallback';
+import ResetPassword from './pages/ResetPassword';
+
 const PAGE_TITLES: Record<string, string> = {
   '/': 'Dashboard',
   '/staff': 'Staff',
@@ -123,6 +126,9 @@ const App: React.FC = () => {
           path="/login"
           element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
         />
+        <Route path="/activate" element={<AuthCallback />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route
           path="/*"
           element={isAuthenticated ? <ProtectedLayout /> : <Navigate to="/login" replace />}

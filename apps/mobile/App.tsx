@@ -80,7 +80,7 @@ function AppNavigator() {
   const isEnrolled = !!session;
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false, animationEnabled: true }}>
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
       {!isEnrolled ? (
         // Enrollment flow
         <>
@@ -96,7 +96,7 @@ function AppNavigator() {
           <Stack.Screen
             name="Confirm"
             component={ConfirmScreen}
-            options={{ presentation: 'fullScreenModal', gestureEnabled: false }}
+            options={{ presentation: 'modal', gestureEnabled: false }}
           />
         </>
       )}
