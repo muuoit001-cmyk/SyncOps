@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Eye, EyeOff, Zap, Shield, AlertCircle, CheckCircle2, ArrowRight, Mail, KeyRound, User } from 'lucide-react';
+import { Eye, EyeOff, Zap, Shield, AlertCircle, CheckCircle2, Mail, KeyRound } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { supabase } from '../services/supabase';
 import api from '../services/api';

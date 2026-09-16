@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Download, Filter, ChevronDown, ChevronUp, AlertTriangle, Loader2 } from 'lucide-react';
+import { Download, Filter, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import api from '../services/api';
@@ -132,8 +132,8 @@ const Attendance: React.FC = () => {
           <h1 className="page-title">Attendance Log</h1>
           <p className="page-subtitle">{total.toLocaleString()} records found</p>
         </div>
-        <button className="btn btn-secondary" onClick={handleExport} id="export-csv-btn">
-          <Download size={16} /> Export CSV
+        <button className="btn btn-secondary" onClick={handleExport} disabled={exporting} id="export-csv-btn">
+          <Download size={16} /> {exporting ? 'Exporting...' : 'Export CSV'}
         </button>
       </div>
 

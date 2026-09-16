@@ -18,7 +18,7 @@ const AuthCallback: React.FC = () => {
       try {
         // 1. If Supabase session is in the URL hash (Supabase auth redirect)
         if (supabase) {
-          const { data, error: sbError } = await supabase.auth.getSession();
+          const { data } = await supabase.auth.getSession();
           if (data?.session?.user?.email) {
             // Activate account in backend database
             await api.post('/auth/activate', { email: data.session.user.email });
