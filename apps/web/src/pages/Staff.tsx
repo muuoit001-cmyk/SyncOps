@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, Search, Edit2, UserX, MapPin } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Plus, Search, Edit2, UserX, MapPin, Upload, Download, X } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../services/api';
 import type { StaffMember, Site } from '../types';
+import { csvEscape, downloadTextFile, parseCsv, staffTemplateCsv } from '../utils/csv';
 
 // ── Staff Drawer ────────────────────────────────────────────────────────────
 interface StaffDrawerProps {
@@ -185,6 +186,10 @@ const Staff: React.FC = () => {
   const [search, setSearch] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkResult, setBulkResult] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -212,6 +217,34 @@ const Staff: React.FC = () => {
     fetchData();
   };
 
+  const handleBulkFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setBulkLoading(true);
+    setBulkResult(null);
+    try {
+      const rows = parseCsv(await file.text());
+      if (!rows.length) throw new Error('The uploaded CSV has no staff records.');
+      const { data } = await api.post('/staff/bulk', { staff: rows });
+      setBulkResult(data);
+      fetchData();
+    } catch (err: any) {
+      setBulkResult({ error: err.response?.data?.error || err.message || 'Bulk import failed' });
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const downloadBulkErrors = () => {
+    const errors = [...(bulkResult?.failed || []), ...(bulkResult?.duplicates || [])];
+    const rows = [
+      ['Row', 'Column', 'Employee ID', 'Error'],
+      ...errors.map((item: any) => [item.row, item.column || '', item.employee_id || '', item.error || '']),
+    ];
+    downloadTextFile('syncops_staff_import_errors.csv', rows.map(row => row.map(csvEscape).join(',')).join('\r\n'));
+  };
+
   const statusBadge = (status: string) => {
     const map: Record<string, string> = {
       active: 'badge-green',
@@ -235,7 +268,50 @@ const Staff: React.FC = () => {
         >
           <Plus size={16} /> Add Staff Member
         </button>
+        <button className="btn btn-secondary" onClick={() => { setBulkOpen(true); setBulkResult(null); }}>
+          <Upload size={16} /> Bulk Add Staff
+        </button>
       </div>
+
+      {bulkOpen && (
+        <div className="card" style={{ marginBottom: '1rem' }} role="dialog" aria-label="Bulk add staff">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1rem', margin: 0 }}>Bulk Add Staff</h2>
+              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.8rem', margin: '0.35rem 0 0' }}>
+                Upload a CSV using the required columns: Employee ID, Full Name, Email, Phone, Site Name.
+              </p>
+            </div>
+            <button className="btn btn-secondary btn-icon btn-sm" onClick={() => setBulkOpen(false)} aria-label="Close bulk upload">
+              <X size={15} />
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+            <button className="btn btn-secondary" onClick={() => downloadTextFile('syncops_staff_template.csv', staffTemplateCsv())}>
+              <Download size={15} /> Download Template
+            </button>
+            <button className="btn btn-primary" onClick={() => fileInputRef.current?.click()} disabled={bulkLoading}>
+              <Upload size={15} /> {bulkLoading ? 'Importing...' : 'Choose CSV'}
+            </button>
+            <input ref={fileInputRef} type="file" accept=".csv,text/csv" onChange={handleBulkFile} hidden />
+          </div>
+          {bulkResult?.error && <p role="alert" style={{ color: 'var(--color-error)', marginBottom: 0 }}>{bulkResult.error}</p>}
+          {bulkResult && !bulkResult.error && (
+            <div style={{ marginTop: '1rem', fontSize: '0.85rem' }}>
+              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                <span className="badge badge-green">Added: {bulkResult.importedCount}</span>
+                <span className="badge badge-amber">Duplicates: {bulkResult.duplicateCount}</span>
+                <span className="badge badge-red">Failed: {bulkResult.failedCount}</span>
+              </div>
+              {(bulkResult.failedCount > 0 || bulkResult.duplicateCount > 0) && (
+                <button className="btn btn-secondary btn-sm" style={{ marginTop: '0.75rem' }} onClick={downloadBulkErrors}>
+                  <Download size={14} /> Download Error Report
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Search */}
       <div

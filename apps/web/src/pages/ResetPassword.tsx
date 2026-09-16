@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, Zap, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
 import api from '../services/api';
+import { supabase } from '../services/supabase';
 
 const ResetPassword: React.FC = () => {
   const [searchParams] = useSearchParams();
@@ -32,11 +33,20 @@ const ResetPassword: React.FC = () => {
 
     setLoading(true);
     try {
-      await api.post('/auth/reset-password', {
-        token,
-        email,
-        password,
-      });
+      let resetWithSupabase = false;
+      if (supabase) {
+        const { data } = await supabase.auth.getSession();
+        if (data.session) {
+          const { error: updateError } = await supabase.auth.updateUser({ password });
+          if (updateError) throw updateError;
+          resetWithSupabase = true;
+        }
+      }
+
+      if (!resetWithSupabase) {
+        if (!token) throw new Error('This password reset link is invalid or has expired.');
+        await api.post('/auth/reset-password', { token, email, password });
+      }
       setSuccess(true);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to reset password. The link may have expired.');

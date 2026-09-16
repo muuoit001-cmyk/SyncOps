@@ -1,10 +1,11 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
 import React, { useEffect, useState, useCallback } from 'react';
-import { MapContainer, TileLayer, Circle, Marker, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Plus, MapPin, Trash2, Edit2, Users } from 'lucide-react';
+import toast from 'react-hot-toast';
 import api from '../services/api';
 import type { Site } from '../types';
 
@@ -39,6 +40,14 @@ const MapResizer: React.FC = () => {
   return null;
 };
 
+const MapCenterUpdater: React.FC<{ center: [number, number] }> = ({ center }) => {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, Math.max(map.getZoom(), 14));
+  }, [center, map]);
+  return null;
+};
+
 // ── Site Drawer ────────────────────────────────────────────────────────────
 interface SiteDrawerProps {
   open: boolean;
@@ -51,6 +60,7 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
   const [form, setForm] = useState({ name: '', address: '', lat: '', lng: '', radius_meters: '100' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [mapCenter, setMapCenter] = useState<[number, number]>([-1.2921, 36.8219]);
   const [markerPos, setMarkerPos] = useState<[number, number] | null>(null);
 
@@ -71,11 +81,31 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
       setMarkerPos([-1.2921, 36.8219]);
     }
     setError('');
+    setSearchQuery(site?.address || '');
   }, [site, open]);
 
   const handleMapClick = (lat: number, lng: number) => {
     setMarkerPos([lat, lng]);
     setForm(f => ({ ...f, lat: lat.toFixed(6), lng: lng.toFixed(6) }));
+  };
+
+  const handleSearchResult = (lat: number, lng: number, address: string) => {
+    setMarkerPos([lat, lng]);
+    setMapCenter([lat, lng]);
+    setForm(f => ({ ...f, lat: lat.toFixed(6), lng: lng.toFixed(6), address: f.address || address }));
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(searchQuery)}`);
+      const results = await response.json();
+      if (!results.length) throw new Error('Location not found');
+      const result = results[0];
+      handleSearchResult(Number(result.lat), Number(result.lon), result.display_name || searchQuery.trim());
+    } catch (err: any) {
+      toast.error(err.message || 'Location search failed');
+    }
   };
 
   const handleLatChange = (val: string) => {
@@ -124,6 +154,7 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
       } else {
         await api.post('/sites', payload);
       }
+      toast.success(site ? 'Site updated successfully' : 'Site created successfully');
       onSaved();
       onClose();
     } catch (err: any) {
@@ -169,6 +200,19 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
             {/* Map */}
             <div className="form-group">
               <label className="form-label">Location — click on the map to set pin or enter coordinates</label>
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <input
+                  className="form-input"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search address or place"
+                  aria-label="Search for site location"
+                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleSearch())}
+                />
+                <button type="button" className="btn btn-secondary" onClick={handleSearch} disabled={!searchQuery.trim()}>
+                  Search
+                </button>
+              </div>
               <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1.5px solid var(--color-border)', position: 'relative' }}>
                 <MapContainer
                   center={currentCenter}
@@ -176,6 +220,7 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
                   style={{ height: 260 }}
                 >
                   <MapResizer />
+                  <MapCenterUpdater center={mapCenter} />
                   <TileLayer
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                     attribution='© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -183,7 +228,14 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
                   <MapClickHandler onMapClick={handleMapClick} />
                   {markerPos && (
                     <>
-                      <Marker position={markerPos} />
+                      <Marker
+                        position={markerPos}
+                        draggable
+                        eventHandlers={{ dragend: (event: any) => {
+                          const position = event.target.getLatLng();
+                          handleMapClick(position.lat, position.lng);
+                        } }}
+                      />
                       <Circle
                         center={markerPos}
                         radius={radius}
@@ -194,7 +246,7 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
                 </MapContainer>
               </div>
               <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: 4, display: 'block' }}>
-                💡 Click anywhere on the map to drop the geofence center pin.
+                Click the map to place the pin, or drag the pin to fine-tune the location.
               </span>
             </div>
 
