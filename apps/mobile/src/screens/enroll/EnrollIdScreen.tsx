@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, radius, fontSize, shadow } from '../../constants/theme';
-import api from '../../services/api';
+import api, { getApiBaseUrl } from '../../services/api';
 
 interface Props {
   navigation: any;
@@ -31,8 +31,10 @@ const EnrollIdScreen: React.FC<Props> = ({ navigation }) => {
       // Navigate to location permission step with staff data
       navigation.navigate('EnrollLocation', { staffData: data });
     } catch (err: any) {
-      if (err.code === 'ERR_NETWORK' || !err.response) {
-        setError('Cannot reach the SyncOps server. Check your internet connection and try again.');
+      if (err.code === 'ECONNABORTED') {
+        setError(`The SyncOps server timed out. Check your connection and try again. Server: ${getApiBaseUrl()}`);
+      } else if (err.code === 'ERR_NETWORK' || !err.response) {
+        setError(`Cannot reach the SyncOps server. Check that this phone has internet access, then try again. Server: ${getApiBaseUrl()}`);
       } else {
         const msg = err.response?.data?.error || 'Employee ID not found. Contact your HR team.';
         setError(msg);

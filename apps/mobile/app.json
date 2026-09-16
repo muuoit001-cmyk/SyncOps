@@ -37,7 +37,7 @@
       "expo-secure-store"
     ],
     "extra": {
-      "apiUrl": "https://syncops-production-f5ac.up.railway.app"
+      "apiUrl": "https://syncops-production-f5ac.up.railway.app/api"
     }
   }
 }
