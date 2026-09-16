@@ -127,8 +127,8 @@ Before production launch, protect the public enrollment endpoint with a one-time
 For the Supabase SQL Editor seed section, set session variables before running the script:
 
 ```sql
-SET app.syncops_admin_email = 'admin@your-company.com';
-SET app.syncops_admin_password = 'use-a-unique-password-at-least-12-chars';
+SELECT set_config('app.syncops_admin_email', 'admin@your-company.com', false);
+SELECT set_config('app.syncops_admin_password', 'use-a-unique-password-at-least-12-chars', false);
 ```
 
 The SQL seed uses PostgreSQL `pgcrypto` to bcrypt-hash that password and refuses to seed with missing or short credentials.

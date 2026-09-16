@@ -227,8 +227,8 @@ DECLARE
 BEGIN
 
   IF COALESCE(v_admin_email, '') = '' OR COALESCE(v_admin_password, '') = '' OR length(v_admin_password) < 12 THEN
-    RAISE EXCEPTION 'Set app.syncops_admin_email and app.syncops_admin_password (minimum 12 characters) before running the seed section';
-  END IF;
+    RAISE NOTICE 'Schema setup completed. Demo seed data was skipped because strong admin credentials were not supplied.';
+  ELSE
 
   -- 1. Insert HR Admin user using the operator-provided session credentials
   INSERT INTO hr_users (id, email, password_hash, full_name, role)
@@ -293,5 +293,6 @@ BEGIN
     VALUES (v_staff3_id, v_site_id, 'clock_out', (v_base_date - (v_day || ' days')::INTERVAL)::DATE + TIME '16:55:00', -1.2921, 36.8219, 8.0, 48.2, true)
     ON CONFLICT DO NOTHING;
   END LOOP;
+  END IF;
 
 END $$;
