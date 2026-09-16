@@ -81,16 +81,16 @@ export function useGeofence(): GeofenceResult {
         if (!cancelled) setSiteName(site.name);
 
         // Haversine on client (mirrors server check — but server is authoritative)
-        const d = haversine(
-          pos.coords.latitude, pos.coords.longitude,
-          site.lat, site.lng,
-        );
+        const d = haversine(pos.coords.latitude, pos.coords.longitude, site.lat, site.lng);
+        const insidePolygon = Array.isArray(site.polygon_coordinates) && site.polygon_coordinates.length >= 3
+          ? pointInPolygon(pos.coords.latitude, pos.coords.longitude, site.polygon_coordinates)
+          : null;
 
         if (!cancelled) {
           setDistanceM(Math.round(d));
           if (acc !== null && acc > GPS_ACCURACY_WARNING_M) {
             setStatus('low_accuracy');
-          } else if (d <= site.radius_meters) {
+          } else if (insidePolygon !== null ? insidePolygon : d <= site.radius_meters) {
             setStatus('inside');
           } else {
             setStatus('outside');
@@ -113,6 +113,18 @@ export function useGeofence(): GeofenceResult {
     isLoading: status === 'checking',
     recheck,
   };
+}
+
+function pointInPolygon(lat: number, lng: number, polygon: Array<{ lat: number; lng: number }>): boolean {
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+    const current = polygon[index];
+    const prior = polygon[previous];
+    const intersects = ((current.lng > lng) !== (prior.lng > lng))
+      && lat < ((prior.lat - current.lat) * (lng - current.lng)) / (prior.lng - current.lng) + current.lat;
+    if (intersects) inside = !inside;
+  }
+  return inside;
 }
 
 function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {

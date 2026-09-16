@@ -24,7 +24,7 @@ const OfflineBanner: React.FC<OfflineBannerProps> = ({ count }) => (
 );
 
 const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { session, clearSession } = useSessionStore();
+  const { session, lockSession } = useSessionStore();
   const { status: fenceStatus, distanceM, accuracy, siteName, recheck } = useGeofence();
   const {
     clockState, error, confirmedAt, isOffline, queuedCount,
@@ -102,13 +102,28 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   const handleClockTap = async () => {
     if (clockState !== 'idle' || nextAction === 'completed') return;
-    await performClock(nextAction as ClockAction, currentLocation);
+    try {
+      // Capture a fresh position at the moment of the action; the server remains authoritative.
+      const position = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
+        new Promise<Location.LocationObject>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+      ]).catch(() => Location.getLastKnownPositionAsync());
+      const location = position ? {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        accuracy: position.coords.accuracy ?? undefined,
+      } : currentLocation;
+      setCurrentLocation(location);
+      await performClock(nextAction as ClockAction, location);
+    } catch {
+      await performClock(nextAction as ClockAction, currentLocation);
+    }
   };
 
   const handleLogout = () => {
-    Alert.alert('Log out', 'You will need to enroll this device again before clocking in.', [
+    Alert.alert('Lock SyncOps', 'Your device will remain enrolled. Unlock with your fingerprint to continue.', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Log out', style: 'destructive', onPress: () => clearSession() },
+      { text: 'Lock', onPress: () => lockSession() },
     ]);
   };
 
@@ -118,8 +133,9 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const isButtonDisabled =
     isCompletedToday ||
     clockState !== 'idle' ||
-    fenceStatus === 'outside' ||
-    fenceStatus === 'permission_denied';
+    fenceStatus === 'checking' ||
+    fenceStatus === 'permission_denied' ||
+    fenceStatus === 'no_site';
 
   const isFenceChecking = fenceStatus === 'checking';
   const isLowAccuracy = fenceStatus === 'low_accuracy';

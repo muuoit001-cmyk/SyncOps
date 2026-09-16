@@ -13,6 +13,7 @@ import EnrollIdScreen from './src/screens/enroll/EnrollIdScreen';
 import EnrollLocationScreen from './src/screens/enroll/EnrollLocationScreen';
 import EnrollBiometricScreen from './src/screens/enroll/EnrollBiometricScreen';
 import EnrollDoneScreen from './src/screens/enroll/EnrollDoneScreen';
+import UnlockScreen from './src/screens/UnlockScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ConfirmScreen from './src/screens/ConfirmScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
@@ -65,7 +66,7 @@ function MainTabs() {
 
 // ── Root navigator ──────────────────────────────────────────────────────────
 function AppNavigator() {
-  const { session, isLoading } = useSessionStore();
+  const { session, isLoading, isLocked } = useSessionStore();
 
   if (isLoading) {
     return (
@@ -78,6 +79,10 @@ function AppNavigator() {
   }
 
   const isEnrolled = !!session;
+
+  if (isLocked) {
+    return <UnlockScreen />;
+  }
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>

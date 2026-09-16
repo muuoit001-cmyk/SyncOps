@@ -16,6 +16,15 @@ async function ensureSchema() {
   `);
 
   await pool.query(`
+    ALTER TABLE attendance_logs
+      ADD COLUMN IF NOT EXISTS is_accepted BOOLEAN NOT NULL DEFAULT TRUE;
+    DROP INDEX IF EXISTS idx_attendance_staff_action_day;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_staff_action_day
+      ON attendance_logs (staff_id, action, ((timezone('UTC', timestamp_utc))::date))
+      WHERE is_accepted = TRUE;
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS shifts (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), name VARCHAR(255) NOT NULL,
       start_time TIME NOT NULL, end_time TIME NOT NULL, timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',

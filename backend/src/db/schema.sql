@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS attendance_logs (
   is_offline_sync BOOLEAN NOT NULL DEFAULT FALSE,
   flag_reason     TEXT[],               -- array of flag reasons
   is_flagged      BOOLEAN NOT NULL DEFAULT FALSE,
+  is_accepted     BOOLEAN NOT NULL DEFAULT TRUE,
   reviewed_by     UUID REFERENCES hr_users(id),
   reviewed_at     TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -155,7 +156,8 @@ CREATE INDEX IF NOT EXISTS idx_staff_site_id ON staff(site_id);
 CREATE INDEX IF NOT EXISTS idx_devices_staff_id ON devices(staff_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, created_at DESC) WHERE read_at IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_attendance_staff_action_day
-  ON attendance_logs (staff_id, action, ((timezone('UTC', timestamp_utc))::date));
+  ON attendance_logs (staff_id, action, ((timezone('UTC', timestamp_utc))::date))
+  WHERE is_accepted = TRUE;
 
 -- ── Updated-at trigger ──────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION update_updated_at()

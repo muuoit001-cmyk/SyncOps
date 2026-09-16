@@ -18,6 +18,7 @@ router.get('/today-status', deviceAuth, async (req, res) => {
     const { rows } = await pool.query(
       `SELECT action, timestamp_utc FROM attendance_logs
        WHERE staff_id = $1
+        AND is_accepted = true
          AND (timezone('UTC', timestamp_utc))::date = (timezone('UTC', NOW()))::date
        ORDER BY timestamp_utc ASC`,
       [req.staffMember.id]
@@ -52,6 +53,7 @@ router.post('/clock', deviceAuth, async (req, res) => {
     const { rows: todayRows } = await pool.query(
       `SELECT action, timestamp_utc FROM attendance_logs
        WHERE staff_id = $1
+        AND is_accepted = true
          AND (timezone('UTC', timestamp_utc))::date = (timezone('UTC', NOW()))::date
        ORDER BY timestamp_utc ASC`,
       [req.staffMember.id]
@@ -104,7 +106,7 @@ router.post('/clock', deviceAuth, async (req, res) => {
     // Last action for rapid clock detection
     const { rows: lastRows } = await pool.query(
       `SELECT action, timestamp_utc FROM attendance_logs
-       WHERE staff_id = $1 ORDER BY timestamp_utc DESC LIMIT 1`,
+        WHERE staff_id = $1 AND is_accepted = true ORDER BY timestamp_utc DESC LIMIT 1`,
       [req.staffMember.id]
     );
     const lastLog = lastRows[0] || null;
@@ -121,6 +123,8 @@ router.post('/clock', deviceAuth, async (req, res) => {
     });
 
     const isFlagged = flags.length > 0;
+    const isTooFar = Boolean(siteRow && (lat == null || lng == null || !withinFence));
+    const isAccepted = !isTooFar;
 
     // Insert log — server timestamp is authoritative
     const logId = uuidv4();
@@ -128,8 +132,8 @@ router.post('/clock', deviceAuth, async (req, res) => {
       `INSERT INTO attendance_logs
          (id, staff_id, site_id, device_id, action, timestamp_utc, client_time_utc,
           lat, lng, gps_accuracy_m, distance_from_site_m, is_within_fence,
-          is_offline_sync, flag_reason, is_flagged)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+           is_offline_sync, flag_reason, is_flagged, is_accepted)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        RETURNING *`,
       [
         logId,
@@ -147,6 +151,7 @@ router.post('/clock', deviceAuth, async (req, res) => {
         !!is_offline_sync,
         flags.length ? flags : null,
         isFlagged,
+        isAccepted,
       ]
     );
 
@@ -167,6 +172,19 @@ router.post('/clock', deviceAuth, async (req, res) => {
          FROM hr_users WHERE is_active = true`,
         [uuidv4(), `${req.staffMember.full_name} generated a flagged ${action.replace('_', ' ')} event.`, JSON.stringify({ logId: log.id, staffId: req.staffMember.id })],
       ).catch((notificationError) => console.error('notification create error:', notificationError));
+    }
+    if (isTooFar) {
+      return res.status(403).json({
+        error: distanceM == null
+          ? (siteRow.polygon_coordinates
+            ? 'Too far from the assigned location. Move inside the site geofence and try again.'
+            : 'Location could not be verified. Move into the site area and try again.')
+          : `Too far from the assigned location (${distanceM}m away). Move within ${siteRow.radius_meters}m and try again.`,
+        code: 'TOO_FAR_FROM_LOCATION',
+        distanceM,
+        allowedRadiusM: siteRow.radius_meters,
+        flagged: true,
+      });
     }
     res.status(201).json({
       ok: true,
