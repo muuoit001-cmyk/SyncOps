@@ -61,6 +61,7 @@ const EnrollBiometricScreen: React.FC<Props> = ({ navigation, route }) => {
 
       const { data } = await api.post('/devices/enroll', {
         staff_id: staffData.id,
+        enrollment_code: staffData.enrollment_code,
         device_label: deviceLabel,
         platform,
         public_key_b64: keyPair.publicKeyB64,

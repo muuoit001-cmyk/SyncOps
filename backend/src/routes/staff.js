@@ -1,23 +1,30 @@
 const express = require('express');
+const crypto = require('crypto');
 const { body, param, query, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/pool');
 const { authJwt } = require('../middleware/authJwt');
+const { requireWriteAccess } = require('../middleware/authJwt');
 
 const router = express.Router();
 
 // ── GET /api/staff/lookup/:employee_id  (mobile enrollment) ──────────────
 // NOTE: Public endpoint — called by mobile device during enrollment
 router.get('/lookup/:employee_id', async (req, res) => {
+  const enrollmentCode = String(req.query.code || '').trim().toUpperCase();
+  if (!enrollmentCode) return res.status(401).json({ error: 'A one-time enrollment code is required.' });
   try {
     const { rows } = await pool.query(
       `SELECT s.id, s.employee_id, s.full_name, s.site_id, s.status, si.name as site_name
        FROM staff s
        LEFT JOIN sites si ON si.id = s.site_id
-       WHERE UPPER(s.employee_id) = $1`,
-      [req.params.employee_id.trim().toUpperCase()]
+       WHERE UPPER(s.employee_id) = $1
+         AND s.enrollment_code_hash = $2
+         AND s.enrollment_code_used_at IS NULL
+         AND s.enrollment_code_expires_at > NOW()`,
+      [req.params.employee_id.trim().toUpperCase(), crypto.createHash('sha256').update(enrollmentCode).digest('hex')]
     );
-    if (!rows.length) return res.status(404).json({ error: 'Employee ID not found. Contact your HR team.' });
+    if (!rows.length) return res.status(401).json({ error: 'Employee ID or enrollment code is invalid or expired.' });
     if (rows[0].status !== 'active') return res.status(403).json({ error: 'Staff account is not active' });
     res.json(rows[0]);
   } catch (err) {
@@ -30,6 +37,26 @@ router.get('/lookup/:employee_id', async (req, res) => {
 // HR DASHBOARD ENDPOINTS (JWT-authenticated)
 // ─────────────────────────────────────────────────────────────────────────
 router.use(authJwt);
+
+// ── POST /api/staff/:id/enrollment-code ───────────────────────────────────
+router.post('/:id/enrollment-code', requireWriteAccess, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT id, employee_id, full_name, status FROM staff WHERE id = $1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Staff not found' });
+    if (rows[0].status !== 'active') return res.status(400).json({ error: 'Only active staff can be enrolled' });
+
+    const code = crypto.randomBytes(5).toString('hex').toUpperCase();
+    const hash = crypto.createHash('sha256').update(code).digest('hex');
+    await pool.query(
+      `UPDATE staff SET enrollment_code_hash = $1, enrollment_code_expires_at = NOW() + INTERVAL '24 hours', enrollment_code_used_at = NULL WHERE id = $2`,
+      [hash, req.params.id],
+    );
+    res.json({ employee_id: rows[0].employee_id, full_name: rows[0].full_name, code, expiresInHours: 24 });
+  } catch (err) {
+    console.error('Enrollment code error:', err);
+    res.status(500).json({ error: 'Failed to generate enrollment code' });
+  }
+});
 
 // ── GET /api/staff ─────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
@@ -75,6 +102,7 @@ router.get('/:id', async (req, res) => {
 // ── POST /api/staff ────────────────────────────────────────────────────────
 router.post(
   '/',
+  requireWriteAccess,
   [
     body('employee_id').trim().notEmpty().withMessage('Employee ID is required'),
     body('full_name').trim().isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
@@ -133,7 +161,7 @@ function pickField(row, keys) {
 }
 
 // ── POST /api/staff/bulk ──────────────────────────────────────────────────
-router.post('/bulk', async (req, res) => {
+router.post('/bulk', requireWriteAccess, async (req, res) => {
   const { staff } = req.body;
   if (!Array.isArray(staff) || staff.length === 0) {
     return res.status(400).json({ error: 'Staff list must be a non-empty array' });
@@ -248,6 +276,7 @@ router.post('/bulk', async (req, res) => {
 // ── PATCH /api/staff/:id ──────────────────────────────────────────────────
 router.patch(
   '/:id',
+  requireWriteAccess,
   [
     body('full_name').optional().trim().isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
     body('email').optional({ checkFalsy: true }).isEmail().normalizeEmail().withMessage('Invalid email address'),
@@ -291,7 +320,7 @@ router.patch(
 );
 
 // ── DELETE /api/staff/:id (deactivate) ───────────────────────────────────
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireWriteAccess, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `UPDATE staff SET status = 'inactive' WHERE id = $1 RETURNING id`,

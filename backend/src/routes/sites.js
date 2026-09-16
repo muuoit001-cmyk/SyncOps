@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/pool');
-const { authJwt } = require('../middleware/authJwt');
+const { authJwt, requireWriteAccess } = require('../middleware/authJwt');
 
 const router = express.Router();
 
@@ -57,6 +57,7 @@ router.get('/:id', async (req, res) => {
 // ── POST /api/sites ────────────────────────────────────────────────────
 router.post(
   '/',
+  requireWriteAccess,
   [
     body('name').trim().isLength({ min: 2 }).withMessage('Site name must be at least 2 characters'),
     body('lat').isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90'),
@@ -91,6 +92,7 @@ router.post(
 // ── PATCH /api/sites/:id ───────────────────────────────────────────────
 router.patch(
   '/:id',
+  requireWriteAccess,
   [
     body('name').optional().trim().isLength({ min: 2 }).withMessage('Site name must be at least 2 characters'),
     body('lat').optional().isFloat({ min: -90, max: 90 }).withMessage('Latitude must be between -90 and 90'),
@@ -135,7 +137,7 @@ router.patch(
 );
 
 // ── DELETE /api/sites/:id (soft delete) ───────────────────────────────
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireWriteAccess, async (req, res) => {
   try {
     const { rows } = await pool.query(
       'UPDATE sites SET is_active = false WHERE id = $1 RETURNING id',

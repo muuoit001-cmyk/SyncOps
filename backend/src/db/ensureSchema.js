@@ -16,6 +16,13 @@ async function ensureSchema() {
   `);
 
   await pool.query(`
+    ALTER TABLE staff
+      ADD COLUMN IF NOT EXISTS enrollment_code_hash TEXT,
+      ADD COLUMN IF NOT EXISTS enrollment_code_expires_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS enrollment_code_used_at TIMESTAMPTZ;
+  `);
+
+  await pool.query(`
     ALTER TABLE attendance_logs
       ADD COLUMN IF NOT EXISTS is_accepted BOOLEAN NOT NULL DEFAULT TRUE;
   `);

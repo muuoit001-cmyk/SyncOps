@@ -33,4 +33,11 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { authJwt, requireAdmin };
+function requireWriteAccess(req, res, next) {
+  if (req.hrUser?.role === 'hr') {
+    return res.status(403).json({ error: 'Read-only HR accounts cannot modify staff, sites, or schedules' });
+  }
+  next();
+}
+
+module.exports = { authJwt, requireAdmin, requireWriteAccess };

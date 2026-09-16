@@ -8,6 +8,7 @@ import { Plus, MapPin, Trash2, Edit2, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 import type { Site } from '../types';
+import { useAuthStore } from '../store/authStore';
 
 // Fix leaflet default icon
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -291,6 +292,8 @@ const SiteDrawer: React.FC<SiteDrawerProps> = ({ open, site, onClose, onSaved })
 
 // ── Main Sites Page ──────────────────────────────────────────────────────────
 const Sites: React.FC = () => {
+  const { user } = useAuthStore();
+  const canWrite = user?.role !== 'hr';
   const [sites, setSites] = useState<Site[]>([]);
   const [selected, setSelected] = useState<Site | null>(null);
   const [loading, setLoading] = useState(true);
@@ -325,13 +328,13 @@ const Sites: React.FC = () => {
           <h1 className="page-title">Sites & Geofences</h1>
           <p className="page-subtitle">{sites.length} sites configured</p>
         </div>
-        <button
+        {canWrite && <button
           className="btn btn-primary"
           onClick={() => { setEditingSite(null); setDrawerOpen(true); }}
           id="add-site-btn"
         >
           <Plus size={16} /> Add Site
-        </button>
+        </button>}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '1rem' }}>
@@ -406,12 +409,12 @@ const Sites: React.FC = () => {
                     <Users size={10} /> {selected.staff_count ?? 0} staff
                   </span>
                   <span className="badge badge-gray">{selected.radius_meters}m radius</span>
-                  <button className="btn btn-secondary btn-sm btn-icon" onClick={() => { setEditingSite(selected); setDrawerOpen(true); }} aria-label="Edit site" title="Edit site">
+                  {canWrite && <button className="btn btn-secondary btn-sm btn-icon" onClick={() => { setEditingSite(selected); setDrawerOpen(true); }} aria-label="Edit site" title="Edit site">
                     <Edit2 size={14} />
-                  </button>
-                  <button className="btn btn-danger btn-sm btn-icon" onClick={() => handleDelete(selected.id)} aria-label="Delete site" title="Delete site">
+                  </button>}
+                  {canWrite && <button className="btn btn-danger btn-sm btn-icon" onClick={() => handleDelete(selected.id)} aria-label="Delete site" title="Delete site">
                     <Trash2 size={14} />
-                  </button>
+                  </button>}
                 </div>
               </div>
               <MapContainer

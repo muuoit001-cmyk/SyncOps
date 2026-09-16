@@ -4,6 +4,7 @@
 -- ==============================================================================
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ── 1. HR Users ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS hr_users (
@@ -46,6 +47,9 @@ CREATE TABLE IF NOT EXISTS staff (
   site_id       UUID REFERENCES sites(id),
   status        VARCHAR(50) NOT NULL DEFAULT 'active',
   enrolled_at   TIMESTAMPTZ,
+  enrollment_code_hash TEXT,
+  enrollment_code_expires_at TIMESTAMPTZ,
+  enrollment_code_used_at TIMESTAMPTZ,
   created_by    UUID REFERENCES hr_users(id),
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -138,6 +142,11 @@ CREATE TABLE IF NOT EXISTS notifications (
 ALTER TABLE sites
   ADD COLUMN IF NOT EXISTS polygon_coordinates JSONB;
 
+ALTER TABLE staff
+  ADD COLUMN IF NOT EXISTS enrollment_code_hash TEXT,
+  ADD COLUMN IF NOT EXISTS enrollment_code_expires_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS enrollment_code_used_at TIMESTAMPTZ;
+
 ALTER TABLE attendance_logs
   ADD COLUMN IF NOT EXISTS is_accepted BOOLEAN NOT NULL DEFAULT TRUE;
 
@@ -204,6 +213,8 @@ CREATE TRIGGER trg_staff_updated_at
 
 DO $$
 DECLARE
+  v_admin_email TEXT := current_setting('app.syncops_admin_email', true);
+  v_admin_password TEXT := current_setting('app.syncops_admin_password', true);
   v_hr_id UUID := 'a0000000-0000-0000-0000-000000000001'::UUID;
   v_site_id UUID := 'b0000000-0000-0000-0000-000000000001'::UUID;
   v_staff1_id UUID := 'c0000000-0000-0000-0000-000000000001'::UUID;
@@ -215,12 +226,16 @@ DECLARE
   v_base_date TIMESTAMPTZ := NOW();
 BEGIN
 
-  -- 1. Insert HR Admin user (password: admin123)
+  IF COALESCE(v_admin_email, '') = '' OR COALESCE(v_admin_password, '') = '' OR length(v_admin_password) < 12 THEN
+    RAISE EXCEPTION 'Set app.syncops_admin_email and app.syncops_admin_password (minimum 12 characters) before running the seed section';
+  END IF;
+
+  -- 1. Insert HR Admin user using the operator-provided session credentials
   INSERT INTO hr_users (id, email, password_hash, full_name, role)
   VALUES (
     v_hr_id,
-    'admin@syncops.dev',
-    '$2a$10$Y57vTgs85bG4gBsNwjra1ORYLn0Cb0GlSVPdN419RbBYQK3VrHsiK',
+    v_admin_email,
+    crypt(v_admin_password, gen_salt('bf', 12)),
     'SyncOps Admin',
     'hr_admin'
   )

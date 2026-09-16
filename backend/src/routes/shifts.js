@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/pool');
-const { authJwt } = require('../middleware/authJwt');
+const { authJwt, requireWriteAccess } = require('../middleware/authJwt');
 
 const router = express.Router();
 router.use(authJwt);
@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/', [
+router.post('/', requireWriteAccess, [
   body('name').trim().isLength({ min: 2 }),
   body('start_time').matches(/^([01]\\d|2[0-3]):[0-5]\\d$/),
   body('end_time').matches(/^([01]\\d|2[0-3]):[0-5]\\d$/),
@@ -42,7 +42,7 @@ router.post('/', [
   }
 });
 
-router.put('/assign/:staffId', [
+router.put('/assign/:staffId', requireWriteAccess, [
   body('shift_id').isUUID(),
   body('effective_from').optional().isISO8601(),
 ], async (req, res) => {
@@ -61,7 +61,7 @@ router.put('/assign/:staffId', [
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireWriteAccess, async (req, res) => {
   try {
     const { rowCount } = await pool.query('UPDATE shifts SET is_active = false WHERE id = $1', [req.params.id]);
     if (!rowCount) return res.status(404).json({ error: 'Shift not found' });

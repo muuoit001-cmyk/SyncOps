@@ -14,16 +14,20 @@ interface Props {
 
 const EnrollIdScreen: React.FC<Props> = ({ navigation }) => {
   const [employeeId, setEmployeeId] = useState('');
+  const [enrollmentCode, setEnrollmentCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleLookup = async () => {
-    if (!employeeId.trim()) return;
+    if (!employeeId.trim() || !enrollmentCode.trim()) return;
     setLoading(true);
     setError('');
 
     try {
-      const { data } = await api.get(`/staff/lookup/${employeeId.trim().toUpperCase()}`);
+      const { data } = await api.get(`/staff/lookup/${employeeId.trim().toUpperCase()}`, {
+        params: { code: enrollmentCode.trim().toUpperCase() },
+      });
+      data.enrollment_code = enrollmentCode.trim().toUpperCase();
       // Navigate to location permission step with staff data
       navigation.navigate('EnrollLocation', { staffData: data });
     } catch (err: any) {
@@ -75,6 +79,20 @@ const EnrollIdScreen: React.FC<Props> = ({ navigation }) => {
               accessibilityHint="Enter the employee ID given to you by HR"
             />
 
+            <Text style={styles.label}>One-time enrollment code</Text>
+            <TextInput
+              style={[styles.input, error ? styles.inputError : null]}
+              value={enrollmentCode}
+              onChangeText={t => { setEnrollmentCode(t); setError(''); }}
+              placeholder="Provided by HR"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              returnKeyType="go"
+              onSubmitEditing={handleLookup}
+              accessibilityLabel="One-time enrollment code input"
+            />
+
             {error ? (
               <Text style={styles.errorText}>{error}</Text>
             ) : null}
@@ -82,7 +100,7 @@ const EnrollIdScreen: React.FC<Props> = ({ navigation }) => {
             <TouchableOpacity
               style={[styles.btn, loading && styles.btnDisabled]}
               onPress={handleLookup}
-              disabled={loading || !employeeId.trim()}
+              disabled={loading || !employeeId.trim() || !enrollmentCode.trim()}
               accessibilityRole="button"
               accessibilityLabel="Look up employee ID"
               id="lookup-btn"

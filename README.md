@@ -1,10 +1,10 @@
 # SyncOps
 
-**Lightweight staff attendance system** — fingerprint/face auth + GPS geofencing.
+**Lightweight staff attendance system** — fingerprint authentication + GPS geofencing.
 
 - **Mobile app** (React Native / Expo): staff clock in & out in ≤5 seconds
 - **Web dashboard** (React + Tailwind): HR manages staff, sites, and attendance reports
-- **Backend** (Node.js / Express + PostgreSQL): secure API with device HMAC auth
+- **Backend** (Node.js / Express + PostgreSQL): secure API with signed device authentication
 
 ---
 
@@ -40,9 +40,8 @@ psql -U postgres -c "CREATE DATABASE syncops;"
 # Run schema
 node backend/src/db/init.js
 
-# Seed demo data
-node backend/src/db/seed.js
-# → Creates HR admin: admin@syncops.dev / admin123
+# Seed data with a strong administrator password
+SEED_ADMIN_EMAIL=admin@your-company.com SEED_ADMIN_PASSWORD="use-a-unique-password-at-least-12-chars" node backend/src/db/seed.js
 # → Creates site: HQ Office (Nairobi)
 # → Creates 5 staff members (EMP-001 … EMP-005)
 # → Seeds 7 days of demo attendance logs
@@ -61,7 +60,7 @@ npm run dev:backend
 ```bash
 npm run dev:web
 # → http://localhost:5173
-# Login: admin@syncops.dev / admin123
+# Login using the administrator credentials supplied during seeding
 ```
 
 ### 6. Run the mobile app (Expo)
@@ -116,12 +115,37 @@ syncops/
 
 ---
 
-## Security Model
+## Security Model and Production Status
 
 - **Biometric data** never leaves the device (stored in OS secure enclave)
-- **Device auth**: each request is HMAC-SHA256 signed with a per-device secret stored in `expo-secure-store`
+- **Device auth**: newly enrolled devices sign requests with Ed25519 keys; private keys are stored in `expo-secure-store`. Legacy HMAC devices remain supported during migration.
 - **Server timestamps**: server time is always authoritative — client time is logged for comparison only
 - **Fraud flags**: mock GPS, out-of-fence attempts, rapid clock-out, new device — all logged for HR review (not auto-blocked)
+
+Before production launch, protect the public enrollment endpoint with a one-time enrollment code or an HR-approved enrollment action. Employee IDs are not sufficient proof of identity on their own. Also use long random JWT secrets, HTTPS-only URLs, a restricted `CORS_ORIGIN`, and never use demo credentials.
+
+For the Supabase SQL Editor seed section, set session variables before running the script:
+
+```sql
+SET app.syncops_admin_email = 'admin@your-company.com';
+SET app.syncops_admin_password = 'use-a-unique-password-at-least-12-chars';
+```
+
+The SQL seed uses PostgreSQL `pgcrypto` to bcrypt-hash that password and refuses to seed with missing or short credentials.
+
+To make an existing account read-only HR, an administrator can assign the new role:
+
+```sql
+UPDATE hr_users SET role = 'hr' WHERE email = 'records@your-company.com';
+```
+
+The `hr` role can read staff, sites, attendance, analytics, and notifications. It cannot add or edit staff, create or edit sites, generate enrollment codes, or modify shifts. The backend enforces this even if a user bypasses the dashboard UI.
+
+### Backups and Monitoring
+
+Enable Supabase scheduled backups or Point-in-Time Recovery for the production project, and test a restore before launch. Configure Railway health checks against `/api/health`, retain application logs, and alert on repeated `401`, `403`, `500`, database connection, and rate-limit errors. These provider settings require access to the deployed Supabase/Railway projects and cannot be configured from this repository alone.
+
+The backend now refuses to start in production when JWT secrets are missing/weak, `DATABASE_URL` is missing, or CORS is configured as `*`. This is a baseline hardening check, not a substitute for infrastructure security review.
 
 ---
 
@@ -150,16 +174,26 @@ syncops/
 
 ### Mobile (EAS Build)
 1. `npm install -g eas-cli`
-2. `eas build --platform android` from `apps/mobile/`
-3. Update `app.json` → `extra.apiUrl` to your production backend URL
+2. Confirm `apps/mobile/app.json` → `extra.apiUrl` is the HTTPS production backend URL
+3. For a directly installable Android APK, run from `apps/mobile/`:
+	```bash
+	npm run build:android:preview
+	```
+4. Install the APK from the EAS build link. It runs without Expo Go or a Metro server.
+5. For Play Store distribution, use:
+	```bash
+	npm run build:android:production
+	```
+
+The preview profile creates an installable APK. The production profile creates an Android App Bundle for store publishing. iOS distribution requires an Apple Developer account and the corresponding EAS iOS signing credentials.
 
 ---
 
-## V2 Roadmap
+## Current Feature Status
 
-- WebAuthn (FIDO2) device keypair — replace HMAC with proper public-key signature
-- PostGIS for polygon geofences (multi-zone sites)
-- Push notifications (clock-in reminders, flagged event alerts)
-- Shift scheduling & overtime calculation
+- Ed25519 public-key device signing with legacy HMAC migration support
+- Polygon and radius geofences
+- Push notification token/notification infrastructure; delivery still requires Expo/APNs/FCM credentials
+- Shift scheduling and overtime reporting APIs
 - Dark mode
-- Advanced analytics dashboard
+- Analytics dashboard

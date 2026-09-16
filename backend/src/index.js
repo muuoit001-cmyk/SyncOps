@@ -17,6 +17,20 @@ const analyticsRoutes = require('./routes/analytics');
 const app = express();
 app.set('trust proxy', 1);
 
+if (process.env.NODE_ENV === 'production') {
+  const weakSecrets = [
+    ['JWT_SECRET', process.env.JWT_SECRET],
+    ['JWT_REFRESH_SECRET', process.env.JWT_REFRESH_SECRET],
+  ].filter(([, value]) => !value || value.length < 32 || value.includes('change-in-production'));
+  if (weakSecrets.length) {
+    throw new Error(`Refusing to start with weak production secrets: ${weakSecrets.map(([name]) => name).join(', ')}`);
+  }
+  if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required in production');
+  if (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN.split(',').some((origin) => origin.trim() === '*')) {
+    throw new Error('CORS_ORIGIN must explicitly list trusted production origins');
+  }
+}
+
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   contentSecurityPolicy: false,
@@ -32,8 +46,7 @@ app.use(cors({
     const cleanOrigin = origin.replace(/\/$/, '');
     if (
       allowedOrigins.includes('*') ||
-      allowedOrigins.includes(cleanOrigin) ||
-      cleanOrigin.endsWith('.vercel.app')
+      allowedOrigins.includes(cleanOrigin)
     ) {
       return callback(null, true);
     }

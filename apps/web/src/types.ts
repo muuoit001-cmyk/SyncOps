@@ -2,7 +2,7 @@
 
 export type StaffStatus = 'active' | 'inactive' | 'suspended';
 export type AttendanceAction = 'clock_in' | 'clock_out';
-export type HRRole = 'hr_admin' | 'hr_manager';
+export type HRRole = 'hr_admin' | 'hr_manager' | 'hr';
 
 export interface Site {
   id: string;

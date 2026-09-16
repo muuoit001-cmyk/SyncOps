@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Plus, Search, Edit2, UserX, MapPin, Upload, Download, X } from 'lucide-react';
+import { Plus, Search, Edit2, UserX, MapPin, Upload, Download, X, KeyRound } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../services/api';
 import type { StaffMember, Site } from '../types';
 import { csvEscape, downloadTextFile, parseCsv, staffTemplateCsv } from '../utils/csv';
+import { useAuthStore } from '../store/authStore';
 
 // ── Staff Drawer ────────────────────────────────────────────────────────────
 interface StaffDrawerProps {
@@ -180,6 +181,8 @@ const StaffDrawer: React.FC<StaffDrawerProps> = ({ open, staff, sites, onClose, 
 
 // ── Main Staff Page ─────────────────────────────────────────────────────────
 const Staff: React.FC = () => {
+  const { user } = useAuthStore();
+  const canWrite = user?.role !== 'hr';
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
@@ -215,6 +218,15 @@ const Staff: React.FC = () => {
     if (!confirm('Deactivate this staff member and revoke their device access?')) return;
     await api.delete(`/staff/${id}`);
     fetchData();
+  };
+
+  const handleGenerateEnrollmentCode = async (staff: StaffMember) => {
+    try {
+      const { data } = await api.post(`/staff/${staff.id}/enrollment-code`);
+      window.alert(`Enrollment code for ${data.employee_id}: ${data.code}\n\nGive this code to the staff member. It expires in 24 hours and can only be used once.`);
+    } catch (err: any) {
+      window.alert(err.response?.data?.error || 'Failed to generate enrollment code');
+    }
   };
 
   const handleBulkFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -261,16 +273,16 @@ const Staff: React.FC = () => {
           <h1 className="page-title">Staff Management</h1>
           <p className="page-subtitle">{staffList.length} staff members total</p>
         </div>
-        <button
+        {canWrite && <button
           className="btn btn-primary"
           onClick={() => { setEditingStaff(null); setDrawerOpen(true); }}
           id="add-staff-btn"
         >
           <Plus size={16} /> Add Staff Member
-        </button>
-        <button className="btn btn-secondary" onClick={() => { setBulkOpen(true); setBulkResult(null); }}>
+        </button>}
+        {canWrite && <button className="btn btn-secondary" onClick={() => { setBulkOpen(true); setBulkResult(null); }}>
           <Upload size={16} /> Bulk Add Staff
-        </button>
+        </button>}
       </div>
 
       {bulkOpen && (
@@ -426,15 +438,23 @@ const Staff: React.FC = () => {
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
-                      <button
+                      {canWrite && <button
+                        className="btn btn-secondary btn-sm btn-icon"
+                        onClick={() => handleGenerateEnrollmentCode(s)}
+                        aria-label={`Generate enrollment code for ${s.full_name}`}
+                        title="Generate enrollment code"
+                      >
+                        <KeyRound size={14} />
+                      </button>}
+                      {canWrite && <button
                         className="btn btn-secondary btn-sm btn-icon"
                         onClick={() => { setEditingStaff(s); setDrawerOpen(true); }}
                         aria-label={`Edit ${s.full_name}`}
                         title="Edit"
                       >
                         <Edit2 size={14} />
-                      </button>
-                      <button
+                      </button>}
+                      {canWrite && <button
                         className="btn btn-danger btn-sm btn-icon"
                         onClick={() => handleDeactivate(s.id)}
                         aria-label={`Deactivate ${s.full_name}`}
@@ -442,7 +462,7 @@ const Staff: React.FC = () => {
                         disabled={s.status === 'inactive'}
                       >
                         <UserX size={14} />
-                      </button>
+                      </button>}
                     </div>
                   </td>
                 </tr>

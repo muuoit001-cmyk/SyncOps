@@ -13,15 +13,20 @@ async function seed() {
     await client.query('BEGIN');
 
     // ── HR admin user ──────────────────────────────────────────────────────
-    const passwordHash = await bcrypt.hash('admin123', 12);
+    const adminEmail = process.env.SEED_ADMIN_EMAIL;
+    const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+    if (!adminEmail || !adminPassword || adminPassword.length < 12) {
+      throw new Error('Set SEED_ADMIN_EMAIL and a SEED_ADMIN_PASSWORD of at least 12 characters before seeding');
+    }
+    const passwordHash = await bcrypt.hash(adminPassword, 12);
     const hrId = uuidv4();
     await client.query(
       `INSERT INTO hr_users (id, email, password_hash, full_name, role)
        VALUES ($1, $2, $3, $4, 'hr_admin')
        ON CONFLICT (email) DO NOTHING`,
-      [hrId, 'admin@syncops.dev', passwordHash, 'SyncOps Admin']
+      [hrId, adminEmail.trim().toLowerCase(), passwordHash, 'SyncOps Admin']
     );
-    console.log('✅ HR admin: admin@syncops.dev / admin123');
+    console.log(`✅ HR admin created or preserved: ${adminEmail.trim().toLowerCase()}`);
 
     // ── Site ───────────────────────────────────────────────────────────────
     const siteId = uuidv4();
