@@ -116,14 +116,21 @@ app.use((err, req, res, next) => {
 // ── Start ─────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
 
-ensureSchema()
-  .then(() => console.log('   Database schema verified'))
-  .catch((err) => console.error('   Schema verify failed:', err.message));
+async function startServer() {
+  try {
+    await ensureSchema();
+    console.log('   Database schema verified');
+    app.listen(PORT, () => {
+      console.log(`\n🚀 SyncOps API running on http://localhost:${PORT}`);
+      console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`   Health: http://localhost:${PORT}/api/health\n`);
+    });
+  } catch (err) {
+    console.error('   Schema verify failed; API not started:', err.message);
+    process.exitCode = 1;
+  }
+}
 
-app.listen(PORT, () => {
-  console.log(`\n🚀 SyncOps API running on http://localhost:${PORT}`);
-  console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`   Health: http://localhost:${PORT}/api/health\n`);
-});
+startServer();
 
 module.exports = app;

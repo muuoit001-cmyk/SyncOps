@@ -20,7 +20,9 @@ router.get('/overview', async (req, res) => {
       pool.query(`SELECT d.*, sh.name AS shift_name, sh.start_time AS shift_start_time, sh.end_time AS shift_end_time, COUNT(s.id)::int AS staff_count
         FROM departments d LEFT JOIN staff s ON s.department_id = d.id AND s.status = 'active'
         LEFT JOIN shifts sh ON sh.id = d.shift_id
-        WHERE d.is_active = true GROUP BY d.id ORDER BY d.name`),
+        WHERE d.is_active = true
+        GROUP BY d.id, sh.name, sh.start_time, sh.end_time
+        ORDER BY d.name`),
       pool.query(`SELECT t.*, d.name AS department_name, si.name AS site_name,
           leader.full_name AS leader_name, COUNT(s.id)::int AS staff_count
         FROM teams t LEFT JOIN departments d ON d.id = t.department_id LEFT JOIN sites si ON si.id = t.site_id
