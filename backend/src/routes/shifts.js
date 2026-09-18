@@ -29,12 +29,12 @@ router.post('/', requireWriteAccess, [
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ error: 'Invalid shift details', errors: errors.array() });
-  const { name, start_time, end_time, timezone = 'UTC', grace_minutes = 0, overtime_after_minutes = 480 } = req.body;
+  const { name, start_time, end_time, timezone = 'UTC', grace_minutes = 0, overtime_after_minutes = 480, working_days = [1, 2, 3, 4, 5], description = null } = req.body;
   try {
     const { rows } = await pool.query(
-      `INSERT INTO shifts (id, name, start_time, end_time, timezone, grace_minutes, overtime_after_minutes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [uuidv4(), name.trim(), start_time, end_time, timezone, grace_minutes, overtime_after_minutes, req.hrUser.id],
+      `INSERT INTO shifts (id, name, start_time, end_time, timezone, grace_minutes, overtime_after_minutes, working_days, description, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [uuidv4(), name.trim(), start_time, end_time, timezone, grace_minutes, overtime_after_minutes, JSON.stringify(working_days), description, req.hrUser.id],
     );
     res.status(201).json(rows[0]);
   } catch (err) {

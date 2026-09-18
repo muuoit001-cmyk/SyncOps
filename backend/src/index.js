@@ -13,6 +13,7 @@ const { ensureSchema } = require('./db/ensureSchema');
 const shiftsRoutes = require('./routes/shifts');
 const notificationsRoutes = require('./routes/notifications');
 const analyticsRoutes = require('./routes/analytics');
+const organizationRoutes = require('./routes/organization');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -94,6 +95,7 @@ app.use('/api/devices', devicesRoutes);
 app.use('/api/shifts', shiftsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/organization', organizationRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {

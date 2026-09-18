@@ -28,6 +28,63 @@ async function ensureSchema() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS departments (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(150) NOT NULL UNIQUE,
+      code VARCHAR(32) NOT NULL UNIQUE,
+      description TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_by UUID REFERENCES hr_users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS teams (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(150) NOT NULL,
+      code VARCHAR(32) NOT NULL UNIQUE,
+      department_id UUID REFERENCES departments(id),
+      site_id UUID REFERENCES sites(id),
+      leader_staff_id UUID REFERENCES staff(id),
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_by UUID REFERENCES hr_users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS leave_types (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      name VARCHAR(100) NOT NULL UNIQUE,
+      code VARCHAR(32) NOT NULL UNIQUE,
+      days_per_year NUMERIC(6,2) NOT NULL DEFAULT 0,
+      requires_approval BOOLEAN NOT NULL DEFAULT TRUE,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS leave_requests (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
+      leave_type_id UUID NOT NULL REFERENCES leave_types(id),
+      starts_on DATE NOT NULL,
+      ends_on DATE NOT NULL,
+      days NUMERIC(6,2) NOT NULL,
+      reason TEXT,
+      status VARCHAR(32) NOT NULL DEFAULT 'pending',
+      reviewed_by UUID REFERENCES hr_users(id),
+      reviewed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (ends_on >= starts_on),
+      CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled'))
+    );
+    ALTER TABLE staff
+      ADD COLUMN IF NOT EXISTS department_id UUID REFERENCES departments(id),
+      ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id),
+      ADD COLUMN IF NOT EXISTS role_title VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS date_joined DATE;
+    CREATE INDEX IF NOT EXISTS idx_staff_department ON staff(department_id);
+    CREATE INDEX IF NOT EXISTS idx_staff_team ON staff(team_id);
+    CREATE INDEX IF NOT EXISTS idx_leave_requests_dates ON leave_requests(starts_on, ends_on);
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS shifts (
       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), name VARCHAR(255) NOT NULL,
       start_time TIME NOT NULL, end_time TIME NOT NULL, timezone VARCHAR(64) NOT NULL DEFAULT 'UTC',
@@ -57,6 +114,14 @@ async function ensureSchema() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_hr_users_auth_user_id
       ON hr_users (auth_user_id)
       WHERE auth_user_id IS NOT NULL;
+  `);
+
+  await pool.query(`
+    ALTER TABLE shifts
+      ADD COLUMN IF NOT EXISTS working_days JSONB NOT NULL DEFAULT '[1,2,3,4,5]'::jsonb,
+      ADD COLUMN IF NOT EXISTS description TEXT;
+    ALTER TABLE staff_shifts
+      ADD COLUMN IF NOT EXISTS effective_to DATE;
   `);
 
   try {
