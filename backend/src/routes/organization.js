@@ -6,6 +6,7 @@ const { authJwt, requireWriteAccess, requireAdmin } = require('../middleware/aut
 
 const router = express.Router();
 router.use(authJwt);
+const MAX_LEAVE_DOCUMENT_BYTES = 8 * 1024 * 1024;
 
 function validate(req, res, next) {
   const errors = validationResult(req);
@@ -29,13 +30,24 @@ router.get('/overview', async (req, res) => {
         FROM shifts sh LEFT JOIN staff_shifts ss ON ss.shift_id = sh.id
         WHERE sh.is_active = true GROUP BY sh.id ORDER BY sh.start_time`),
       pool.query(`SELECT * FROM leave_types WHERE is_active = true ORDER BY name`),
-      pool.query(`SELECT lr.*, s.full_name, s.employee_id, lt.name AS leave_type_name,
+        pool.query(`SELECT lr.*, s.full_name, s.employee_id, lt.name AS leave_type_name,
           manager.full_name AS manager_name
         FROM leave_requests lr JOIN staff s ON s.id = lr.staff_id JOIN leave_types lt ON lt.id = lr.leave_type_id
         LEFT JOIN staff manager ON manager.id = s.manager_staff_id
         WHERE lr.status IN ('pending_manager', 'pending_hr') ORDER BY lr.starts_on, lr.created_at`),
     ]);
-    res.json({ departments: departments.rows, teams: teams.rows, shifts: shifts.rows, leaveTypes: leaveTypes.rows, pendingLeave: leaveRequests.rows });
+    const requestIds = leaveRequests.rows.map(row => row.id);
+    const documents = requestIds.length ? await pool.query(
+      `SELECT id, leave_request_id, document_type, file_name, mime_type, file_size, created_at
+       FROM leave_documents WHERE leave_request_id = ANY($1::uuid[]) ORDER BY created_at DESC`,
+      [requestIds]
+    ) : { rows: [] };
+    const documentsByRequest = new Map();
+    documents.rows.forEach(document => {
+      if (!documentsByRequest.has(document.leave_request_id)) documentsByRequest.set(document.leave_request_id, []);
+      documentsByRequest.get(document.leave_request_id).push(document);
+    });
+    res.json({ departments: departments.rows, teams: teams.rows, shifts: shifts.rows, leaveTypes: leaveTypes.rows, pendingLeave: leaveRequests.rows.map(row => ({ ...row, documents: documentsByRequest.get(row.id) || [] })) });
   } catch (err) {
     console.error('organization overview error:', err);
     res.status(500).json({ error: 'Failed to load organization data' });
@@ -163,6 +175,37 @@ router.patch('/leave-requests/:id/hr', requireAdmin, [
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: 'Could not complete HR leave approval' });
+  }
+});
+
+router.post('/leave-requests/:id/documents', requireWriteAccess, async (req, res) => {
+  const document = req.body.document;
+  const size = Number(document?.file_size || 0);
+  if (!document?.file_name || !document?.mime_type || !document?.content_base64) return res.status(400).json({ error: 'Document name, type, and content are required' });
+  if (!size || size > MAX_LEAVE_DOCUMENT_BYTES) return res.status(400).json({ error: 'Document must be smaller than 8 MB' });
+  try {
+    const { rows: requestRows } = await pool.query('SELECT id FROM leave_requests WHERE id = $1', [req.params.id]);
+    if (!requestRows.length) return res.status(404).json({ error: 'Leave request not found' });
+    const { rows } = await pool.query(
+      `INSERT INTO leave_documents (id, leave_request_id, document_type, file_name, mime_type, file_size, content_base64, uploaded_by_user_id)
+       VALUES ($1,$2,'manager_signed',$3,$4,$5,$6,$7)
+       RETURNING id, leave_request_id, document_type, file_name, mime_type, file_size, created_at`,
+      [uuidv4(), req.params.id, document.file_name, document.mime_type, size, document.content_base64, req.hrUser.id]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(400).json({ error: 'Could not upload signed document' });
+  }
+});
+
+router.get('/leave-documents/:id', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT file_name, mime_type, content_base64 FROM leave_documents WHERE id = $1', [req.params.id]);
+    if (!rows.length) return res.status(404).json({ error: 'Document not found' });
+    const document = rows[0];
+    res.json(document);
+  } catch (err) {
+    res.status(500).json({ error: 'Could not load document' });
   }
 });
 

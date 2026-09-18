@@ -7,7 +7,8 @@ interface Department { id: string; name: string; code: string; description?: str
 interface Team { id: string; name: string; code: string; department_name?: string; site_name?: string; leader_name?: string; staff_count: number }
 interface Shift { id: string; name: string; start_time: string; end_time: string; grace_minutes: number; staff_count: number; working_days?: number[] }
 interface LeaveType { id: string; name: string; code: string; days_per_year: number }
-interface LeaveRequest { id: string; full_name: string; employee_id: string; leave_type_name: string; starts_on: string; ends_on: string; days: number; reason?: string; status: 'pending_manager' | 'pending_hr' }
+interface LeaveDocument { id: string; document_type: string; file_name: string; mime_type: string; file_size?: number }
+interface LeaveRequest { id: string; full_name: string; employee_id: string; leave_type_name: string; starts_on: string; ends_on: string; days: number; reason?: string; status: 'pending_manager' | 'pending_hr'; documents?: LeaveDocument[] }
 
 interface OrganizationData {
   departments: Department[];
@@ -56,6 +57,36 @@ const Organization: React.FC = () => {
     catch (err: any) { setError(err.response?.data?.error || 'Could not complete HR approval'); }
   };
 
+  const uploadSignedDocument = (requestId: string) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/pdf,image/*';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      if (file.size > 8 * 1024 * 1024) { setError('Document must be smaller than 8 MB'); return; }
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const contentBase64 = String(reader.result).split(',')[1];
+          await api.post(`/organization/leave-requests/${requestId}/documents`, { document: { file_name: file.name, mime_type: file.type || 'application/octet-stream', file_size: file.size, content_base64: contentBase64 } });
+          load();
+        } catch (err: any) { setError(err.response?.data?.error || 'Could not upload signed document'); }
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  };
+
+  const downloadDocument = async (documentId: string, fileName: string, mimeType: string) => {
+    try {
+      const { data } = await api.get(`/organization/leave-documents/${documentId}`);
+      const bytes = Uint8Array.from(atob(data.content_base64), character => character.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+      const link = document.createElement('a'); link.href = url; link.download = fileName; link.click(); URL.revokeObjectURL(url);
+    } catch (err: any) { setError(err.response?.data?.error || 'Could not download document'); }
+  };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (tab === 'departments') return create('/organization/departments', form);
@@ -101,7 +132,7 @@ const Organization: React.FC = () => {
             {tab === 'departments' && <div className="table-wrapper"><table><thead><tr><th>Name</th><th>Code</th><th>Employees</th></tr></thead><tbody>{data.departments.map(item => <tr key={item.id}><td>{item.name}</td><td><code>{item.code}</code></td><td>{item.staff_count}</td></tr>)}</tbody></table></div>}
             {tab === 'teams' && <div className="table-wrapper"><table><thead><tr><th>Team</th><th>Department</th><th>Branch</th><th>Leader</th><th>Employees</th></tr></thead><tbody>{data.teams.map(item => <tr key={item.id}><td>{item.name}<small style={{ display: 'block', color: 'var(--color-text-muted)' }}>{item.code}</small></td><td>{item.department_name || '—'}</td><td>{item.site_name || '—'}</td><td>{item.leader_name || 'Unassigned'}</td><td>{item.staff_count}</td></tr>)}</tbody></table></div>}
             {tab === 'shifts' && <div className="table-wrapper"><table><thead><tr><th>Shift</th><th>Schedule</th><th>Grace</th><th>Assigned</th></tr></thead><tbody>{data.shifts.map(item => <tr key={item.id}><td>{item.name}</td><td>{item.start_time.slice(0, 5)} - {item.end_time.slice(0, 5)}</td><td>{item.grace_minutes} min</td><td>{item.staff_count}</td></tr>)}</tbody></table></div>}
-            {tab === 'leave' && <><div className="table-wrapper"><table><thead><tr><th>Leave type</th><th>Code</th><th>Allowance</th></tr></thead><tbody>{data.leaveTypes.map(item => <tr key={item.id}><td>{item.name}</td><td><code>{item.code}</code></td><td>{item.days_per_year} days</td></tr>)}</tbody></table></div><h3 style={{ margin: '1.5rem 0 0.75rem' }}>Approval queue</h3><div className="table-wrapper"><table><thead><tr><th>Employee</th><th>Leave</th><th>Dates</th><th>Stage</th><th>Actions</th></tr></thead><tbody>{data.pendingLeave.map(item => <tr key={item.id}><td>{item.full_name}<small style={{ display: 'block', color: 'var(--color-text-muted)' }}>{item.employee_id}</small></td><td>{item.leave_type_name}</td><td>{item.starts_on} - {item.ends_on}</td><td><span className={`badge ${item.status === 'pending_manager' ? 'badge-amber' : 'badge-blue'}`}>{item.status === 'pending_manager' ? 'Manager approval' : 'HR approval'}</span></td><td>{item.status === 'pending_manager' && (user?.role === 'hr_manager' || user?.role === 'hr_admin') && <button className="btn btn-primary btn-sm" onClick={() => approveAsManager(item.id)}>Manager approve</button>}{item.status === 'pending_hr' && user?.role === 'hr_admin' && <><button className="btn btn-primary btn-sm" onClick={() => decideAsHr(item.id, 'approved')}>HR approve</button> <button className="btn btn-danger btn-sm" onClick={() => decideAsHr(item.id, 'rejected')}>Reject</button></>}</td></tr>)}</tbody></table></div></>}
+            {tab === 'leave' && <><div className="table-wrapper"><table><thead><tr><th>Leave type</th><th>Code</th><th>Allowance</th></tr></thead><tbody>{data.leaveTypes.map(item => <tr key={item.id}><td>{item.name}</td><td><code>{item.code}</code></td><td>{item.days_per_year} days</td></tr>)}</tbody></table></div><h3 style={{ margin: '1.5rem 0 0.75rem' }}>Approval queue</h3><div className="table-wrapper"><table><thead><tr><th>Employee</th><th>Leave</th><th>Dates</th><th>Stage</th><th>Documents</th><th>Actions</th></tr></thead><tbody>{data.pendingLeave.map(item => <tr key={item.id}><td>{item.full_name}<small style={{ display: 'block', color: 'var(--color-text-muted)' }}>{item.employee_id}</small></td><td>{item.leave_type_name}</td><td>{item.starts_on} - {item.ends_on}</td><td><span className={`badge ${item.status === 'pending_manager' ? 'badge-amber' : 'badge-blue'}`}>{item.status === 'pending_manager' ? 'Manager approval' : 'HR approval'}</span></td><td>{item.documents?.map(doc => <button key={doc.id} className="btn btn-secondary btn-sm" onClick={() => downloadDocument(doc.id, doc.file_name, doc.mime_type)} style={{ margin: '0.15rem' }}>{doc.document_type === 'manager_signed' ? 'Signed form' : 'Document'}</button>)}{item.status === 'pending_manager' && (user?.role === 'hr_manager' || user?.role === 'hr_admin') && <button className="btn btn-secondary btn-sm" onClick={() => uploadSignedDocument(item.id)}>Upload signed</button>}</td><td>{item.status === 'pending_manager' && (user?.role === 'hr_manager' || user?.role === 'hr_admin') && <button className="btn btn-primary btn-sm" onClick={() => approveAsManager(item.id)}>Manager approve</button>}{item.status === 'pending_hr' && user?.role === 'hr_admin' && <><button className="btn btn-primary btn-sm" onClick={() => decideAsHr(item.id, 'approved')}>HR approve</button> <button className="btn btn-danger btn-sm" onClick={() => decideAsHr(item.id, 'rejected')}>Reject</button></>}</td></tr>)}</tbody></table></div></>}
           </div>
         </div>
       )}

@@ -9,6 +9,16 @@ const { evaluateFraudSignals } = require('../utils/fraud');
 
 const router = express.Router();
 
+const MAX_LEAVE_DOCUMENT_BYTES = 8 * 1024 * 1024;
+
+function validateLeaveDocument(document) {
+  if (!document || typeof document !== 'object') return 'Document is required';
+  if (!document.file_name || !document.mime_type || !document.content_base64) return 'Document name, type, and content are required';
+  const size = Number(document.file_size || Math.floor(String(document.content_base64).length * 0.75));
+  if (!Number.isFinite(size) || size < 1 || size > MAX_LEAVE_DOCUMENT_BYTES) return 'Document must be smaller than 8 MB';
+  return null;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // MOBILE ENDPOINTS (device-authenticated)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -254,12 +264,23 @@ router.get('/leave', deviceAuth, async (req, res) => {
       `SELECT lr.id, lr.starts_on, lr.ends_on, lr.days, lr.reason, lr.status,
           lt.name AS leave_type_name
        FROM leave_requests lr JOIN leave_types lt ON lt.id = lr.leave_type_id
-       WHERE lr.staff_id = $1 ORDER BY lr.starts_on DESC`,
+      WHERE lr.staff_id = $1 ORDER BY lr.starts_on DESC`,
       [req.staffMember.id]
       ),
       pool.query(`SELECT id, name, code, days_per_year FROM leave_types WHERE is_active = true ORDER BY name`),
     ]);
-    res.json({ requests: requests.rows, leaveTypes: leaveTypes.rows });
+    const requestIds = requests.rows.map(row => row.id);
+    const documents = requestIds.length ? await pool.query(
+      `SELECT id, leave_request_id, document_type, file_name, mime_type, file_size, created_at
+       FROM leave_documents WHERE leave_request_id = ANY($1::uuid[]) ORDER BY created_at DESC`,
+      [requestIds]
+    ) : { rows: [] };
+    const documentsByRequest = new Map();
+    documents.rows.forEach(document => {
+      if (!documentsByRequest.has(document.leave_request_id)) documentsByRequest.set(document.leave_request_id, []);
+      documentsByRequest.get(document.leave_request_id).push(document);
+    });
+    res.json({ requests: requests.rows.map(row => ({ ...row, documents: documentsByRequest.get(row.id) || [] })), leaveTypes: leaveTypes.rows });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch leave' });
   }
@@ -271,10 +292,13 @@ router.post('/leave', deviceAuth, [
   body('starts_on').isISO8601().withMessage('Start date must use YYYY-MM-DD'),
   body('ends_on').isISO8601().withMessage('End date must use YYYY-MM-DD'),
   body('reason').optional({ checkFalsy: true }).trim().isLength({ max: 1000 }).withMessage('Reason is too long'),
+  body('attachment').optional(),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg, errors: errors.array() });
-  const { leave_type_id, starts_on, ends_on, reason } = req.body;
+  const { leave_type_id, starts_on, ends_on, reason, attachment } = req.body;
+  const documentError = attachment ? validateLeaveDocument(attachment) : null;
+  if (documentError) return res.status(400).json({ error: documentError });
   const start = new Date(`${starts_on}T00:00:00Z`);
   const end = new Date(`${ends_on}T00:00:00Z`);
   const days = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
@@ -282,7 +306,7 @@ router.post('/leave', deviceAuth, [
   try {
     const { rows: overlap } = await pool.query(
       `SELECT id FROM leave_requests
-       WHERE staff_id = $1 AND status IN ('pending', 'approved')
+      WHERE staff_id = $1 AND status IN ('pending_manager', 'pending_hr', 'approved')
          AND starts_on <= $3::date AND ends_on >= $2::date LIMIT 1`,
       [req.staffMember.id, starts_on, ends_on]
     );
@@ -292,10 +316,53 @@ router.post('/leave', deviceAuth, [
        VALUES ($1,$2,$3,$4,$5,$6,$7,'pending_manager') RETURNING *`,
       [uuidv4(), req.staffMember.id, leave_type_id, starts_on, ends_on, days, reason || null]
     );
-    res.status(201).json(rows[0]);
+    const request = rows[0];
+    const { rows: leaveTypeRows } = await pool.query('SELECT name FROM leave_types WHERE id = $1', [leave_type_id]);
+    const summary = [
+      'SyncOps Leave Application',
+      `Employee: ${req.staffMember.full_name} (${req.staffMember.employee_id})`,
+      `Leave type: ${leaveTypeRows[0]?.name || leave_type_id}`,
+      `Dates: ${starts_on} to ${ends_on}`,
+      `Days: ${days}`,
+      `Reason: ${reason || 'Not provided'}`,
+      'Status: Awaiting manager approval',
+    ].join('\n');
+    const summaryBase64 = Buffer.from(summary, 'utf8').toString('base64');
+    await pool.query(
+      `INSERT INTO leave_documents (id, leave_request_id, document_type, file_name, mime_type, file_size, content_base64, uploaded_by_staff_id)
+       VALUES ($1,$2,'application_summary',$3,'text/plain',$4,$5,$6)`,
+      [uuidv4(), request.id, `leave-application-${request.id}.txt`, Buffer.byteLength(summary), summaryBase64, req.staffMember.id]
+    );
+    if (attachment) {
+      await pool.query(
+        `INSERT INTO leave_documents (id, leave_request_id, document_type, file_name, mime_type, file_size, content_base64, uploaded_by_staff_id)
+         VALUES ($1,$2,'supporting_document',$3,$4,$5,$6,$7)`,
+        [uuidv4(), request.id, attachment.file_name, attachment.mime_type, attachment.file_size || null, attachment.content_base64, req.staffMember.id]
+      );
+    }
+    res.status(201).json(request);
   } catch (err) {
     console.error('mobile leave application error:', err);
     res.status(400).json({ error: 'Could not submit leave application' });
+  }
+});
+
+router.post('/leave/:id/documents', deviceAuth, async (req, res) => {
+  const documentError = validateLeaveDocument(req.body.document);
+  if (documentError) return res.status(400).json({ error: documentError });
+  try {
+    const { rows: requestRows } = await pool.query('SELECT id FROM leave_requests WHERE id = $1 AND staff_id = $2', [req.params.id, req.staffMember.id]);
+    if (!requestRows.length) return res.status(404).json({ error: 'Leave request not found' });
+    const document = req.body.document;
+    const { rows } = await pool.query(
+      `INSERT INTO leave_documents (id, leave_request_id, document_type, file_name, mime_type, file_size, content_base64, uploaded_by_staff_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING id, leave_request_id, document_type, file_name, mime_type, file_size, created_at`,
+      [uuidv4(), req.params.id, document.document_type || 'supporting_document', document.file_name, document.mime_type, document.file_size || null, document.content_base64, req.staffMember.id]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(400).json({ error: 'Could not attach document' });
   }
 });
 

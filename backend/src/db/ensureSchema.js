@@ -67,7 +67,7 @@ async function ensureSchema() {
       ends_on DATE NOT NULL,
       days NUMERIC(6,2) NOT NULL,
       reason TEXT,
-      status VARCHAR(32) NOT NULL DEFAULT 'pending',
+      status VARCHAR(32) NOT NULL DEFAULT 'pending_manager',
       reviewed_by UUID REFERENCES hr_users(id),
       reviewed_at TIMESTAMPTZ,
       manager_approved_by UUID REFERENCES staff(id),
@@ -78,6 +78,18 @@ async function ensureSchema() {
       CHECK (ends_on >= starts_on),
       CHECK (status IN ('pending_manager', 'pending_hr', 'approved', 'rejected', 'cancelled'))
     );
+    CREATE TABLE IF NOT EXISTS leave_documents (
+      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+      leave_request_id UUID NOT NULL REFERENCES leave_requests(id) ON DELETE CASCADE,
+      document_type VARCHAR(40) NOT NULL,
+      file_name VARCHAR(255) NOT NULL,
+      mime_type VARCHAR(150) NOT NULL,
+      file_size INTEGER,
+      content_base64 TEXT NOT NULL,
+      uploaded_by_staff_id UUID REFERENCES staff(id),
+      uploaded_by_user_id UUID REFERENCES hr_users(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     ALTER TABLE staff
       ADD COLUMN IF NOT EXISTS department_id UUID REFERENCES departments(id),
       ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id),
@@ -87,6 +99,12 @@ async function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_staff_department ON staff(department_id);
     CREATE INDEX IF NOT EXISTS idx_staff_team ON staff(team_id);
     CREATE INDEX IF NOT EXISTS idx_leave_requests_dates ON leave_requests(starts_on, ends_on);
+    CREATE INDEX IF NOT EXISTS idx_leave_documents_request ON leave_documents(leave_request_id);
+    INSERT INTO leave_types (id, name, code, days_per_year)
+    VALUES
+      (uuid_generate_v4(), 'Annual Leave', 'ANNUAL', 21),
+      (uuid_generate_v4(), 'Sick Leave', 'SICK', 14)
+    ON CONFLICT (code) DO NOTHING;
   `);
 
   await pool.query(`

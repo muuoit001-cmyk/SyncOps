@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { signedRequest } from '../services/api';
 import { useSessionStore } from '../store/sessionStore';
 import { colors, fontSize, spacing, radius } from '../constants/theme';
@@ -14,6 +16,7 @@ interface LeaveItem {
   leave_type_name: string;
 }
 interface LeaveType { id: string; name: string; days_per_year: number }
+interface Attachment { file_name: string; mime_type: string; file_size?: number; content_base64: string }
 
 const LeaveScreen: React.FC = () => {
   const { session } = useSessionStore();
@@ -25,6 +28,7 @@ const LeaveScreen: React.FC = () => {
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -39,18 +43,32 @@ const LeaveScreen: React.FC = () => {
     if (!session || !selectedType || !startsOn || !endsOn) { setError('Select a leave type and enter both dates.'); return; }
     setSubmitting(true); setError('');
     try {
-      await signedRequest('POST', '/attendance/leave', { leave_type_id: selectedType, starts_on: startsOn, ends_on: endsOn, reason }, session.deviceId, session.deviceToken, session.privateKeyB64);
-      setStartsOn(''); setEndsOn(''); setReason('');
+      await signedRequest('POST', '/attendance/leave', { leave_type_id: selectedType, starts_on: startsOn, ends_on: endsOn, reason, attachment }, session.deviceId, session.deviceToken, session.privateKeyB64);
+      setStartsOn(''); setEndsOn(''); setReason(''); setAttachment(null);
       const { data } = await signedRequest('GET', '/attendance/leave', {}, session.deviceId, session.deviceToken, session.privateKeyB64);
       setItems(data.requests); setLeaveTypes(data.leaveTypes);
     } catch (err: any) { setError(err.response?.data?.error || 'Could not submit leave application'); }
     finally { setSubmitting(false); }
   };
 
+  const pickAttachment = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: ['application/pdf', 'image/*'], copyToCacheDirectory: true });
+      if (result.canceled || !result.assets?.[0]) return;
+      const file = result.assets[0];
+      if (file.size && file.size > 8 * 1024 * 1024) { setError('Document must be smaller than 8 MB.'); return; }
+      const content_base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
+      setAttachment({ file_name: file.name, mime_type: file.mimeType || 'application/octet-stream', file_size: file.size, content_base64 });
+      setError('');
+    } catch (err) {
+      setError('Could not attach that document.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}><Text style={styles.title}>Leave</Text><Text style={styles.subtitle}>Your approved and pending leave</Text></View>
-      {loading ? <View style={styles.center}><ActivityIndicator color={colors.primary} /></View> : <FlatList data={items} keyExtractor={item => item.id} contentContainerStyle={styles.list} ListHeaderComponent={<View style={styles.form}><Text style={styles.formTitle}>Apply for leave</Text><View style={styles.typeRow}>{leaveTypes.map(type => <TouchableOpacity key={type.id} style={[styles.typeButton, selectedType === type.id && styles.typeButtonActive]} onPress={() => setSelectedType(type.id)}><Text style={[styles.typeButtonText, selectedType === type.id && styles.typeButtonTextActive]}>{type.name}</Text></TouchableOpacity>)}</View><TextInput style={styles.input} placeholder="Start date (YYYY-MM-DD)" placeholderTextColor={colors.textMuted} value={startsOn} onChangeText={setStartsOn} autoCapitalize="none" /><TextInput style={styles.input} placeholder="End date (YYYY-MM-DD)" placeholderTextColor={colors.textMuted} value={endsOn} onChangeText={setEndsOn} autoCapitalize="none" /><TextInput style={[styles.input, styles.reasonInput]} placeholder="Reason (optional)" placeholderTextColor={colors.textMuted} value={reason} onChangeText={setReason} multiline /><TouchableOpacity style={styles.submit} onPress={applyForLeave} disabled={submitting}><Text style={styles.submitText}>{submitting ? 'Submitting...' : 'Submit application'}</Text></TouchableOpacity>{error ? <Text style={styles.error}>{error}</Text> : null}</View>} ListEmptyComponent={<View style={styles.center}><Text style={styles.empty}>No leave requests</Text></View>} renderItem={({ item }) => <View style={styles.card}><View style={styles.row}><Text style={styles.type}>{item.leave_type_name}</Text><Text style={[styles.status, item.status === 'approved' ? styles.approved : styles.pending]}>{item.status}</Text></View><Text style={styles.dates}>{item.starts_on} - {item.ends_on} ({item.days} days)</Text>{item.reason ? <Text style={styles.reason}>{item.reason}</Text> : null}</View>} />}
+      {loading ? <View style={styles.center}><ActivityIndicator color={colors.primary} /></View> : <FlatList data={items} keyExtractor={item => item.id} contentContainerStyle={styles.list} ListHeaderComponent={<View style={styles.form}><Text style={styles.formTitle}>Apply for leave</Text><View style={styles.typeRow}>{leaveTypes.map(type => <TouchableOpacity key={type.id} style={[styles.typeButton, selectedType === type.id && styles.typeButtonActive]} onPress={() => setSelectedType(type.id)}><Text style={[styles.typeButtonText, selectedType === type.id && styles.typeButtonTextActive]}>{type.name}</Text></TouchableOpacity>)}</View><TextInput style={styles.input} placeholder="Start date (YYYY-MM-DD)" placeholderTextColor={colors.textMuted} value={startsOn} onChangeText={setStartsOn} autoCapitalize="none" /><TextInput style={styles.input} placeholder="End date (YYYY-MM-DD)" placeholderTextColor={colors.textMuted} value={endsOn} onChangeText={setEndsOn} autoCapitalize="none" /><TextInput style={[styles.input, styles.reasonInput]} placeholder="Reason (optional)" placeholderTextColor={colors.textMuted} value={reason} onChangeText={setReason} multiline /><TouchableOpacity style={styles.attach} onPress={pickAttachment}><Text style={styles.attachText}>{attachment ? `Attached: ${attachment.file_name}` : 'Attach sick sheet or supporting document'}</Text></TouchableOpacity><Text style={styles.templateHint}>A leave summary containing these details will be generated automatically for manager signature.</Text><TouchableOpacity style={styles.submit} onPress={applyForLeave} disabled={submitting}><Text style={styles.submitText}>{submitting ? 'Submitting...' : 'Submit application'}</Text></TouchableOpacity>{error ? <Text style={styles.error}>{error}</Text> : null}</View>} ListEmptyComponent={<View style={styles.center}><Text style={styles.empty}>No leave requests</Text></View>} renderItem={({ item }) => <View style={styles.card}><View style={styles.row}><Text style={styles.type}>{item.leave_type_name}</Text><Text style={[styles.status, item.status === 'approved' ? styles.approved : styles.pending]}>{item.status}</Text></View><Text style={styles.dates}>{item.starts_on} - {item.ends_on} ({item.days} days)</Text>{item.reason ? <Text style={styles.reason}>{item.reason}</Text> : null}</View>} />}
     </SafeAreaView>
   );
 };
@@ -82,6 +100,9 @@ const styles = StyleSheet.create({
   reasonInput: { minHeight: 60, textAlignVertical: 'top' },
   submit: { backgroundColor: colors.primary, borderRadius: radius.sm, padding: spacing.sm, alignItems: 'center', marginTop: spacing.md },
   submitText: { color: '#fff', fontWeight: '700' },
+  attach: { borderColor: colors.primary, borderWidth: 1, borderRadius: radius.sm, padding: spacing.sm, marginTop: spacing.md },
+  attachText: { color: colors.primary, fontSize: fontSize.sm, textAlign: 'center' },
+  templateHint: { color: colors.textMuted, fontSize: fontSize.xs, marginTop: spacing.sm },
   error: { color: colors.error, fontSize: fontSize.sm, marginTop: spacing.sm },
 });
 

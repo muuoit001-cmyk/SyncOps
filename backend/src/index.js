@@ -57,7 +57,7 @@ app.use(cors({
 }));
 
 // ── Body parsing ──────────────────────────────────────────────────────────
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({ limit: '12mb' }));
 
 // ── Rate limiting ─────────────────────────────────────────────────────────
 const globalLimiter = rateLimit({
