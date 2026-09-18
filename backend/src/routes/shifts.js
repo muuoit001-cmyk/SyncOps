@@ -21,11 +21,11 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/', requireWriteAccess, [
-  body('name').trim().isLength({ min: 2 }),
+  body('name').trim().isLength({ min: 2 }).withMessage('Shift name must be at least 2 characters'),
   body('start_time').matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('Start time must use HH:MM format'),
   body('end_time').matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('End time must use HH:MM format'),
-  body('grace_minutes').optional().isInt({ min: 0, max: 240 }),
-  body('overtime_after_minutes').optional().isInt({ min: 1, max: 1440 }),
+  body('grace_minutes').optional().isInt({ min: 0, max: 240 }).withMessage('Grace period must be a whole number from 0 to 240'),
+  body('overtime_after_minutes').optional().isInt({ min: 1, max: 1440 }).withMessage('Overtime threshold must be a whole number from 1 to 1440'),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ error: 'Invalid shift details', errors: errors.array() });
