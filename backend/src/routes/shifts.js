@@ -22,8 +22,8 @@ router.get('/', async (req, res) => {
 
 router.post('/', requireWriteAccess, [
   body('name').trim().isLength({ min: 2 }),
-  body('start_time').matches(/^([01]\\d|2[0-3]):[0-5]\\d$/),
-  body('end_time').matches(/^([01]\\d|2[0-3]):[0-5]\\d$/),
+  body('start_time').matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('Start time must use HH:MM format'),
+  body('end_time').matches(/^([01]\d|2[0-3]):[0-5]\d$/).withMessage('End time must use HH:MM format'),
   body('grace_minutes').optional().isInt({ min: 0, max: 240 }),
   body('overtime_after_minutes').optional().isInt({ min: 1, max: 1440 }),
 ], async (req, res) => {

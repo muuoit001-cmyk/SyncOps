@@ -39,7 +39,8 @@ const Organization: React.FC = () => {
       setError('');
       load();
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Could not save this record');
+      const validationMessage = err.response?.data?.errors?.[0]?.msg;
+      setError(validationMessage || err.response?.data?.error || 'Could not save this record');
     }
   };
 
