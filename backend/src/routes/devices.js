@@ -56,7 +56,7 @@ router.post(
       }
 
       // Check for existing active device for this staff
-      const { rows: existingDevices } = await pool.query(
+      const { rows: existingDevices } = await client.query(
         'SELECT id FROM devices WHERE staff_id = $1 AND is_active = true',
         [staff_id]
       );
@@ -81,7 +81,7 @@ router.post(
       );
 
       // Mark staff as enrolled
-      await pool.query(
+      await client.query(
         "UPDATE staff SET enrolled_at = NOW() WHERE id = $1",
         [staff_id]
       );
