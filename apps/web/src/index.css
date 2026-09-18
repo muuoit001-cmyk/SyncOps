@@ -335,6 +335,16 @@ body {
   border: 1px solid var(--color-border);
 }
 
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: 1rem;
+}
+
+@media (max-width: 800px) {
+  .dashboard-grid { grid-template-columns: 1fr; }
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
