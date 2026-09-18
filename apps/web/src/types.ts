@@ -28,6 +28,7 @@ export interface StaffMember {
   department_name?: string;
   team_id?: string;
   team_name?: string;
+  manager_staff_id?: string;
   role_title?: string;
   shift_id?: string;
   shift_name?: string;

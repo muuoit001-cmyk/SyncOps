@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS staff_shifts (
 ALTER TABLE staff
   ADD COLUMN IF NOT EXISTS department_id UUID REFERENCES departments(id),
   ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id),
+  ADD COLUMN IF NOT EXISTS manager_staff_id UUID REFERENCES staff(id),
   ADD COLUMN IF NOT EXISTS role_title VARCHAR(150),
   ADD COLUMN IF NOT EXISTS date_joined DATE;
 
@@ -161,9 +162,12 @@ CREATE TABLE IF NOT EXISTS leave_types (
 CREATE TABLE IF NOT EXISTS leave_requests (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), staff_id UUID NOT NULL REFERENCES staff(id) ON DELETE CASCADE,
   leave_type_id UUID NOT NULL REFERENCES leave_types(id), starts_on DATE NOT NULL, ends_on DATE NOT NULL,
-  days NUMERIC(6,2) NOT NULL, reason TEXT, status VARCHAR(32) NOT NULL DEFAULT 'pending',
-  reviewed_by UUID REFERENCES hr_users(id), reviewed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CHECK (ends_on >= starts_on), CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled'))
+  days NUMERIC(6,2) NOT NULL, reason TEXT, status VARCHAR(32) NOT NULL DEFAULT 'pending_manager',
+  reviewed_by UUID REFERENCES hr_users(id), reviewed_at TIMESTAMPTZ,
+  manager_approved_by UUID REFERENCES staff(id), manager_approved_at TIMESTAMPTZ,
+  hr_approved_by UUID REFERENCES hr_users(id), hr_approved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (ends_on >= starts_on), CHECK (status IN ('pending_manager', 'pending_hr', 'approved', 'rejected', 'cancelled'))
 );
 
 CREATE TABLE IF NOT EXISTS notification_tokens (

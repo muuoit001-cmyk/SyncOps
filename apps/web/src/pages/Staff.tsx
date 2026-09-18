@@ -14,13 +14,14 @@ interface StaffDrawerProps {
   departments: Array<{ id: string; name: string }>;
   teams: Array<{ id: string; name: string; department_id?: string }>;
   shifts: Array<{ id: string; name: string; start_time: string; end_time: string }>;
+  managers: Array<{ id: string; full_name: string; role_title?: string }>;
   onClose: () => void;
   onSaved: () => void;
 }
 
-const StaffDrawer: React.FC<StaffDrawerProps> = ({ open, staff, sites, departments, teams, shifts, onClose, onSaved }) => {
+const StaffDrawer: React.FC<StaffDrawerProps> = ({ open, staff, sites, departments, teams, shifts, managers, onClose, onSaved }) => {
   const [form, setForm] = useState({
-    employee_id: '', full_name: '', email: '', phone: '', site_id: '', department_id: '', team_id: '', role_title: '', shift_id: '', status: 'active',
+    employee_id: '', full_name: '', email: '', phone: '', site_id: '', department_id: '', team_id: '', manager_staff_id: '', role_title: '', shift_id: '', status: 'active',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -35,12 +36,13 @@ const StaffDrawer: React.FC<StaffDrawerProps> = ({ open, staff, sites, departmen
         site_id: staff.site_id || '',
         department_id: staff.department_id || '',
         team_id: staff.team_id || '',
+        manager_staff_id: staff.manager_staff_id || '',
         role_title: staff.role_title || '',
         shift_id: staff.shift_id || '',
         status: staff.status,
       });
     } else {
-      setForm({ employee_id: '', full_name: '', email: '', phone: '', site_id: '', department_id: '', team_id: '', role_title: '', shift_id: '', status: 'active' });
+      setForm({ employee_id: '', full_name: '', email: '', phone: '', site_id: '', department_id: '', team_id: '', manager_staff_id: '', role_title: '', shift_id: '', status: 'active' });
     }
     setError('');
   }, [staff, open]);
@@ -137,6 +139,14 @@ const StaffDrawer: React.FC<StaffDrawerProps> = ({ open, staff, sites, departmen
             </div>
 
             <div className="form-group">
+              <label htmlFor="staff-manager" className="form-label">Manager</label>
+              <select id="staff-manager" className="form-input form-select" value={form.manager_staff_id} onChange={e => setForm(f => ({ ...f, manager_staff_id: e.target.value }))}>
+                <option value="">— No manager assigned —</option>
+                {managers.filter(manager => manager.id !== staff?.id).map(manager => <option key={manager.id} value={manager.id}>{manager.full_name}{manager.role_title ? ` (${manager.role_title})` : ''}</option>)}
+              </select>
+            </div>
+
+            <div className="form-group">
               <label htmlFor="full-name" className="form-label">Full Name *</label>
               <input
                 id="full-name"
@@ -225,6 +235,7 @@ const Staff: React.FC = () => {
   const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
   const [teams, setTeams] = useState<Array<{ id: string; name: string; department_id?: string }>>([]);
   const [shifts, setShifts] = useState<Array<{ id: string; name: string; start_time: string; end_time: string }>>([]);
+  const [managers, setManagers] = useState<Array<{ id: string; full_name: string; role_title?: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -242,6 +253,7 @@ const Staff: React.FC = () => {
       setDepartments(organizationRes.data.departments);
       setTeams(organizationRes.data.teams);
       setShifts(organizationRes.data.shifts);
+      setManagers(staffRes.data.filter((member: StaffMember) => member.status === 'active'));
     } catch (err) {
       console.error(err);
     } finally {
@@ -522,6 +534,7 @@ const Staff: React.FC = () => {
         departments={departments}
         teams={teams}
         shifts={shifts}
+        managers={managers}
         onClose={() => setDrawerOpen(false)}
         onSaved={fetchData}
       />

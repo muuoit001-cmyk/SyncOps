@@ -288,8 +288,8 @@ router.post('/leave', deviceAuth, [
     );
     if (overlap.length) return res.status(409).json({ error: 'You already have a pending or approved leave request covering these dates.' });
     const { rows } = await pool.query(
-      `INSERT INTO leave_requests (id, staff_id, leave_type_id, starts_on, ends_on, days, reason)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      `INSERT INTO leave_requests (id, staff_id, leave_type_id, starts_on, ends_on, days, reason, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'pending_manager') RETURNING *`,
       [uuidv4(), req.staffMember.id, leave_type_id, starts_on, ends_on, days, reason || null]
     );
     res.status(201).json(rows[0]);

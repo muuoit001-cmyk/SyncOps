@@ -64,7 +64,7 @@ router.get('/', async (req, res) => {
     const { rows } = await pool.query(`
       SELECT
         s.id, s.employee_id, s.full_name, s.email, s.phone,
-        s.status, s.enrolled_at, s.created_at, s.department_id, s.team_id, s.role_title,
+        s.status, s.enrolled_at, s.created_at, s.department_id, s.team_id, s.manager_staff_id, s.role_title,
         d.name AS department_name, t.name AS team_name,
         sh.id AS shift_id, sh.name AS shift_name,
         si.id as site_id, si.name as site_name,
@@ -121,6 +121,7 @@ router.post(
     body('site_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid site ID'),
     body('department_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid department ID'),
     body('team_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid team ID'),
+    body('manager_staff_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid manager ID'),
     body('role_title').optional({ checkFalsy: true }).trim().isLength({ max: 150 }),
   ],
   async (req, res) => {
@@ -129,7 +130,7 @@ router.post(
       return res.status(400).json({ error: errors.array()[0].msg, errors: errors.array() });
     }
 
-    const { employee_id, full_name, email, phone, site_id, department_id, team_id, role_title, shift_id } = req.body;
+    const { employee_id, full_name, email, phone, site_id, department_id, team_id, manager_staff_id, role_title, shift_id } = req.body;
     try {
       const cleanEmail = email && email.trim() ? email.trim() : null;
       const cleanPhone = phone && phone.trim() ? phone.trim() : null;
@@ -137,10 +138,10 @@ router.post(
       const createdBy = req.hrUser?.id || null;
 
       const insertStaff = async (creatorId) => pool.query(
-        `INSERT INTO staff (id, employee_id, full_name, email, phone, site_id, department_id, team_id, role_title, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        `INSERT INTO staff (id, employee_id, full_name, email, phone, site_id, department_id, team_id, manager_staff_id, role_title, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          RETURNING *`,
-        [uuidv4(), employee_id.trim().toUpperCase(), full_name.trim(), cleanEmail, cleanPhone, cleanSiteId, department_id || null, team_id || null, role_title || null, creatorId]
+        [uuidv4(), employee_id.trim().toUpperCase(), full_name.trim(), cleanEmail, cleanPhone, cleanSiteId, department_id || null, team_id || null, manager_staff_id || null, role_title || null, creatorId]
       );
 
       let result;
@@ -302,6 +303,7 @@ router.patch(
     body('site_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid site ID'),
     body('department_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid department ID'),
     body('team_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid team ID'),
+    body('manager_staff_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid manager ID'),
     body('role_title').optional({ checkFalsy: true }).trim().isLength({ max: 150 }),
     body('status').optional().isIn(['active', 'inactive', 'suspended']),
   ],
@@ -311,7 +313,7 @@ router.patch(
       return res.status(400).json({ error: errors.array()[0].msg, errors: errors.array() });
     }
 
-    const allowed = ['full_name', 'email', 'phone', 'site_id', 'status', 'department_id', 'team_id', 'role_title'];
+    const allowed = ['full_name', 'email', 'phone', 'site_id', 'status', 'department_id', 'team_id', 'manager_staff_id', 'role_title'];
     const updates = [];
     const values = [];
     let idx = 1;

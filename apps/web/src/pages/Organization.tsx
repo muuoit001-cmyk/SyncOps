@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { BriefcaseBusiness, CalendarDays, Clock3, Plus, Users } from 'lucide-react';
 import api from '../services/api';
+import { useAuthStore } from '../store/authStore';
 
 interface Department { id: string; name: string; code: string; description?: string; staff_count: number }
 interface Team { id: string; name: string; code: string; department_name?: string; site_name?: string; leader_name?: string; staff_count: number }
 interface Shift { id: string; name: string; start_time: string; end_time: string; grace_minutes: number; staff_count: number; working_days?: number[] }
 interface LeaveType { id: string; name: string; code: string; days_per_year: number }
-interface LeaveRequest { id: string; full_name: string; employee_id: string; leave_type_name: string; starts_on: string; ends_on: string; days: number; reason?: string }
+interface LeaveRequest { id: string; full_name: string; employee_id: string; leave_type_name: string; starts_on: string; ends_on: string; days: number; reason?: string; status: 'pending_manager' | 'pending_hr' }
 
 interface OrganizationData {
   departments: Department[];
@@ -19,6 +20,7 @@ interface OrganizationData {
 const emptyData: OrganizationData = { departments: [], teams: [], shifts: [], leaveTypes: [], pendingLeave: [] };
 
 const Organization: React.FC = () => {
+  const { user } = useAuthStore();
   const [data, setData] = useState<OrganizationData>(emptyData);
   const [tab, setTab] = useState<'departments' | 'teams' | 'shifts' | 'leave'>('departments');
   const [loading, setLoading] = useState(true);
@@ -44,13 +46,14 @@ const Organization: React.FC = () => {
     }
   };
 
-  const updateLeave = async (id: string, status: 'approved' | 'rejected') => {
-    try {
-      await api.patch(`/organization/leave-requests/${id}`, { status });
-      load();
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Could not update leave request');
-    }
+  const approveAsManager = async (id: string) => {
+    try { await api.patch(`/organization/leave-requests/${id}/manager`); load(); }
+    catch (err: any) { setError(err.response?.data?.error || 'Could not approve as manager'); }
+  };
+
+  const decideAsHr = async (id: string, status: 'approved' | 'rejected') => {
+    try { await api.patch(`/organization/leave-requests/${id}/hr`, { status }); load(); }
+    catch (err: any) { setError(err.response?.data?.error || 'Could not complete HR approval'); }
   };
 
   const submit = (event: React.FormEvent) => {
@@ -98,7 +101,7 @@ const Organization: React.FC = () => {
             {tab === 'departments' && <div className="table-wrapper"><table><thead><tr><th>Name</th><th>Code</th><th>Employees</th></tr></thead><tbody>{data.departments.map(item => <tr key={item.id}><td>{item.name}</td><td><code>{item.code}</code></td><td>{item.staff_count}</td></tr>)}</tbody></table></div>}
             {tab === 'teams' && <div className="table-wrapper"><table><thead><tr><th>Team</th><th>Department</th><th>Branch</th><th>Leader</th><th>Employees</th></tr></thead><tbody>{data.teams.map(item => <tr key={item.id}><td>{item.name}<small style={{ display: 'block', color: 'var(--color-text-muted)' }}>{item.code}</small></td><td>{item.department_name || '—'}</td><td>{item.site_name || '—'}</td><td>{item.leader_name || 'Unassigned'}</td><td>{item.staff_count}</td></tr>)}</tbody></table></div>}
             {tab === 'shifts' && <div className="table-wrapper"><table><thead><tr><th>Shift</th><th>Schedule</th><th>Grace</th><th>Assigned</th></tr></thead><tbody>{data.shifts.map(item => <tr key={item.id}><td>{item.name}</td><td>{item.start_time.slice(0, 5)} - {item.end_time.slice(0, 5)}</td><td>{item.grace_minutes} min</td><td>{item.staff_count}</td></tr>)}</tbody></table></div>}
-            {tab === 'leave' && <><div className="table-wrapper"><table><thead><tr><th>Leave type</th><th>Code</th><th>Allowance</th></tr></thead><tbody>{data.leaveTypes.map(item => <tr key={item.id}><td>{item.name}</td><td><code>{item.code}</code></td><td>{item.days_per_year} days</td></tr>)}</tbody></table></div><h3 style={{ margin: '1.5rem 0 0.75rem' }}>Pending requests</h3><div className="table-wrapper"><table><thead><tr><th>Employee</th><th>Leave</th><th>Dates</th><th>Days</th><th>Actions</th></tr></thead><tbody>{data.pendingLeave.map(item => <tr key={item.id}><td>{item.full_name}<small style={{ display: 'block', color: 'var(--color-text-muted)' }}>{item.employee_id}</small></td><td>{item.leave_type_name}</td><td>{item.starts_on} - {item.ends_on}</td><td>{item.days}</td><td><button className="btn btn-primary btn-sm" onClick={() => updateLeave(item.id, 'approved')}>Approve</button> <button className="btn btn-danger btn-sm" onClick={() => updateLeave(item.id, 'rejected')}>Reject</button></td></tr>)}</tbody></table></div></>}
+            {tab === 'leave' && <><div className="table-wrapper"><table><thead><tr><th>Leave type</th><th>Code</th><th>Allowance</th></tr></thead><tbody>{data.leaveTypes.map(item => <tr key={item.id}><td>{item.name}</td><td><code>{item.code}</code></td><td>{item.days_per_year} days</td></tr>)}</tbody></table></div><h3 style={{ margin: '1.5rem 0 0.75rem' }}>Approval queue</h3><div className="table-wrapper"><table><thead><tr><th>Employee</th><th>Leave</th><th>Dates</th><th>Stage</th><th>Actions</th></tr></thead><tbody>{data.pendingLeave.map(item => <tr key={item.id}><td>{item.full_name}<small style={{ display: 'block', color: 'var(--color-text-muted)' }}>{item.employee_id}</small></td><td>{item.leave_type_name}</td><td>{item.starts_on} - {item.ends_on}</td><td><span className={`badge ${item.status === 'pending_manager' ? 'badge-amber' : 'badge-blue'}`}>{item.status === 'pending_manager' ? 'Manager approval' : 'HR approval'}</span></td><td>{item.status === 'pending_manager' && (user?.role === 'hr_manager' || user?.role === 'hr_admin') && <button className="btn btn-primary btn-sm" onClick={() => approveAsManager(item.id)}>Manager approve</button>}{item.status === 'pending_hr' && user?.role === 'hr_admin' && <><button className="btn btn-primary btn-sm" onClick={() => decideAsHr(item.id, 'approved')}>HR approve</button> <button className="btn btn-danger btn-sm" onClick={() => decideAsHr(item.id, 'rejected')}>Reject</button></>}</td></tr>)}</tbody></table></div></>}
           </div>
         </div>
       )}

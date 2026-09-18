@@ -70,18 +70,35 @@ async function ensureSchema() {
       status VARCHAR(32) NOT NULL DEFAULT 'pending',
       reviewed_by UUID REFERENCES hr_users(id),
       reviewed_at TIMESTAMPTZ,
+      manager_approved_by UUID REFERENCES staff(id),
+      manager_approved_at TIMESTAMPTZ,
+      hr_approved_by UUID REFERENCES hr_users(id),
+      hr_approved_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CHECK (ends_on >= starts_on),
-      CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled'))
+      CHECK (status IN ('pending_manager', 'pending_hr', 'approved', 'rejected', 'cancelled'))
     );
     ALTER TABLE staff
       ADD COLUMN IF NOT EXISTS department_id UUID REFERENCES departments(id),
       ADD COLUMN IF NOT EXISTS team_id UUID REFERENCES teams(id),
+      ADD COLUMN IF NOT EXISTS manager_staff_id UUID REFERENCES staff(id),
       ADD COLUMN IF NOT EXISTS role_title VARCHAR(150),
       ADD COLUMN IF NOT EXISTS date_joined DATE;
     CREATE INDEX IF NOT EXISTS idx_staff_department ON staff(department_id);
     CREATE INDEX IF NOT EXISTS idx_staff_team ON staff(team_id);
     CREATE INDEX IF NOT EXISTS idx_leave_requests_dates ON leave_requests(starts_on, ends_on);
+  `);
+
+  await pool.query(`
+    ALTER TABLE leave_requests
+      ADD COLUMN IF NOT EXISTS manager_approved_by UUID REFERENCES staff(id),
+      ADD COLUMN IF NOT EXISTS manager_approved_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS hr_approved_by UUID REFERENCES hr_users(id),
+      ADD COLUMN IF NOT EXISTS hr_approved_at TIMESTAMPTZ;
+    ALTER TABLE leave_requests DROP CONSTRAINT IF EXISTS leave_requests_status_check;
+    UPDATE leave_requests SET status = 'pending_manager' WHERE status = 'pending';
+    ALTER TABLE leave_requests ADD CONSTRAINT leave_requests_status_check
+      CHECK (status IN ('pending_manager', 'pending_hr', 'approved', 'rejected', 'cancelled'));
   `);
 
   await pool.query(`

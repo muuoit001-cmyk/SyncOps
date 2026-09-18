@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/pool');
-const { authJwt, requireWriteAccess } = require('../middleware/authJwt');
+const { authJwt, requireWriteAccess, requireAdmin } = require('../middleware/authJwt');
 
 const router = express.Router();
 router.use(authJwt);
@@ -29,9 +29,11 @@ router.get('/overview', async (req, res) => {
         FROM shifts sh LEFT JOIN staff_shifts ss ON ss.shift_id = sh.id
         WHERE sh.is_active = true GROUP BY sh.id ORDER BY sh.start_time`),
       pool.query(`SELECT * FROM leave_types WHERE is_active = true ORDER BY name`),
-      pool.query(`SELECT lr.*, s.full_name, s.employee_id, lt.name AS leave_type_name
+      pool.query(`SELECT lr.*, s.full_name, s.employee_id, lt.name AS leave_type_name,
+          manager.full_name AS manager_name
         FROM leave_requests lr JOIN staff s ON s.id = lr.staff_id JOIN leave_types lt ON lt.id = lr.leave_type_id
-        WHERE lr.status = 'pending' ORDER BY lr.starts_on, lr.created_at`),
+        LEFT JOIN staff manager ON manager.id = s.manager_staff_id
+        WHERE lr.status IN ('pending_manager', 'pending_hr') ORDER BY lr.starts_on, lr.created_at`),
     ]);
     res.json({ departments: departments.rows, teams: teams.rows, shifts: shifts.rows, leaveTypes: leaveTypes.rows, pendingLeave: leaveRequests.rows });
   } catch (err) {
@@ -98,8 +100,8 @@ router.post('/leave-requests', requireWriteAccess, [
 ], validate, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `INSERT INTO leave_requests (id, staff_id, leave_type_id, starts_on, ends_on, days, reason)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      `INSERT INTO leave_requests (id, staff_id, leave_type_id, starts_on, ends_on, days, reason, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'pending_manager') RETURNING *`,
       [uuidv4(), req.body.staff_id, req.body.leave_type_id, req.body.starts_on, req.body.ends_on, req.body.days, req.body.reason || null]
     );
     res.status(201).json(rows[0]);
@@ -109,7 +111,7 @@ router.post('/leave-requests', requireWriteAccess, [
 });
 
 router.patch('/leave-requests/:id', requireWriteAccess, [
-  body('status').isIn(['approved', 'rejected', 'cancelled']),
+  body('status').isIn(['cancelled']),
 ], validate, async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -121,6 +123,46 @@ router.patch('/leave-requests/:id', requireWriteAccess, [
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: 'Could not update leave request' });
+  }
+});
+
+// Manager stage: hr_manager represents the manager approval role until manager
+// dashboard identities are provisioned separately.
+router.patch('/leave-requests/:id/manager', requireWriteAccess, async (req, res) => {
+  if (!['hr_manager', 'hr_admin'].includes(req.hrUser?.role)) {
+    return res.status(403).json({ error: 'Manager approval role required' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `UPDATE leave_requests lr
+       SET status = 'pending_hr',
+           manager_approved_by = (SELECT manager_staff_id FROM staff WHERE id = lr.staff_id),
+           manager_approved_at = NOW()
+       WHERE lr.id = $1 AND lr.status = 'pending_manager' RETURNING lr.*`,
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(409).json({ error: 'Leave request is not awaiting manager approval' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Could not approve leave as manager' });
+  }
+});
+
+// Final HR stage: only hr_admin can make an approved leave effective.
+router.patch('/leave-requests/:id/hr', requireAdmin, [
+  body('status').isIn(['approved', 'rejected']),
+], validate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE leave_requests SET status = $1, hr_approved_by = $2, hr_approved_at = NOW(),
+          reviewed_by = $2, reviewed_at = NOW()
+       WHERE id = $3 AND status = 'pending_hr' RETURNING *`,
+      [req.body.status, req.hrUser.id, req.params.id]
+    );
+    if (!rows.length) return res.status(409).json({ error: 'Leave request is not awaiting HR approval' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Could not complete HR leave approval' });
   }
 });
 
