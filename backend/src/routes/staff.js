@@ -79,7 +79,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN departments d ON d.id = s.department_id
       LEFT JOIN teams t ON t.id = s.team_id
       LEFT JOIN staff_shifts ss ON ss.staff_id = s.id
-      LEFT JOIN shifts sh ON sh.id = ss.shift_id AND sh.is_active = true
+      LEFT JOIN shifts sh ON sh.id = COALESCE(ss.shift_id, d.shift_id) AND sh.is_active = true
       ORDER BY s.full_name
     `);
     res.json(rows);
@@ -100,7 +100,7 @@ router.get('/:id', async (req, res) => {
       LEFT JOIN departments d ON d.id = s.department_id
       LEFT JOIN teams t ON t.id = s.team_id
       LEFT JOIN staff_shifts ss ON ss.staff_id = s.id
-      LEFT JOIN shifts sh ON sh.id = ss.shift_id AND sh.is_active = true
+      LEFT JOIN shifts sh ON sh.id = COALESCE(ss.shift_id, d.shift_id) AND sh.is_active = true
       WHERE s.id = $1
     `, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Staff not found' });

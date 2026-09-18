@@ -152,6 +152,9 @@ ALTER TABLE shifts
 ALTER TABLE staff_shifts
   ADD COLUMN IF NOT EXISTS effective_to DATE;
 
+ALTER TABLE departments
+  ADD COLUMN IF NOT EXISTS shift_id UUID REFERENCES shifts(id);
+
 CREATE TABLE IF NOT EXISTS leave_types (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), name VARCHAR(100) NOT NULL UNIQUE,
   code VARCHAR(32) NOT NULL UNIQUE, days_per_year NUMERIC(6,2) NOT NULL DEFAULT 0,

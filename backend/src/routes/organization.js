@@ -17,8 +17,9 @@ function validate(req, res, next) {
 router.get('/overview', async (req, res) => {
   try {
     const [departments, teams, shifts, leaveTypes, leaveRequests] = await Promise.all([
-      pool.query(`SELECT d.*, COUNT(s.id)::int AS staff_count
+      pool.query(`SELECT d.*, sh.name AS shift_name, sh.start_time AS shift_start_time, sh.end_time AS shift_end_time, COUNT(s.id)::int AS staff_count
         FROM departments d LEFT JOIN staff s ON s.department_id = d.id AND s.status = 'active'
+        LEFT JOIN shifts sh ON sh.id = d.shift_id
         WHERE d.is_active = true GROUP BY d.id ORDER BY d.name`),
       pool.query(`SELECT t.*, d.name AS department_name, si.name AS site_name,
           leader.full_name AS leader_name, COUNT(s.id)::int AS staff_count
@@ -58,15 +59,31 @@ router.post('/departments', requireWriteAccess, [
   body('name').trim().isLength({ min: 2 }),
   body('code').trim().isLength({ min: 2, max: 32 }).withMessage('Department code is required'),
   body('description').optional({ checkFalsy: true }).trim(),
+  body('shift_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid department shift'),
 ], validate, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `INSERT INTO departments (id, name, code, description, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [uuidv4(), req.body.name.trim(), req.body.code.trim().toUpperCase(), req.body.description || null, req.hrUser.id]
+      `INSERT INTO departments (id, name, code, description, shift_id, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [uuidv4(), req.body.name.trim(), req.body.code.trim().toUpperCase(), req.body.description || null, req.body.shift_id || null, req.hrUser.id]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
     res.status(err.code === '23505' ? 409 : 500).json({ error: err.code === '23505' ? 'Department name or code already exists' : 'Failed to create department' });
+  }
+});
+
+router.patch('/departments/:id', requireWriteAccess, [
+  body('shift_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid department shift'),
+], validate, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `UPDATE departments SET shift_id = $1, updated_at = NOW() WHERE id = $2 AND is_active = true RETURNING *`,
+      [req.body.shift_id || null, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Department not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(400).json({ error: 'Could not update department shift' });
   }
 });
 

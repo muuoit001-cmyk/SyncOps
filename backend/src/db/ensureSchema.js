@@ -157,6 +157,8 @@ async function ensureSchema() {
       ADD COLUMN IF NOT EXISTS description TEXT;
     ALTER TABLE staff_shifts
       ADD COLUMN IF NOT EXISTS effective_to DATE;
+    ALTER TABLE departments
+      ADD COLUMN IF NOT EXISTS shift_id UUID REFERENCES shifts(id);
   `);
 
   try {

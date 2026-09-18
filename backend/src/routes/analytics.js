@@ -52,8 +52,9 @@ router.get('/', async (req, res) => {
             make_interval(mins => COALESCE(sh.grace_minutes, 0)))) / 60)::int AS minutes_late
         FROM attendance_logs al JOIN staff s ON s.id = al.staff_id
         LEFT JOIN sites si ON si.id = al.site_id
-        JOIN staff_shifts ss ON ss.staff_id = s.id
-        JOIN shifts sh ON sh.id = ss.shift_id
+        LEFT JOIN departments d ON d.id = s.department_id
+        LEFT JOIN staff_shifts ss ON ss.staff_id = s.id
+        LEFT JOIN shifts sh ON sh.id = COALESCE(ss.shift_id, d.shift_id)
         WHERE al.action = 'clock_in' AND al.timestamp_utc >= $1::date AND al.timestamp_utc < ($2::date + 1)
           AND al.timestamp_utc::time > sh.start_time + make_interval(mins => COALESCE(sh.grace_minutes, 0))
         ORDER BY al.timestamp_utc DESC LIMIT 100`, [from, to]),
@@ -72,12 +73,15 @@ router.get('/', async (req, res) => {
         FROM staff s LEFT JOIN attendance_logs al ON al.staff_id = s.id
           AND al.timestamp_utc >= $1::date AND al.timestamp_utc < ($2::date + 1)
         LEFT JOIN sites si ON si.id = s.site_id
+        LEFT JOIN departments d ON d.id = s.department_id
         WHERE s.status = 'active'
         GROUP BY s.id, s.full_name, s.employee_id, si.name ORDER BY clock_ins DESC, s.full_name`, [from, to]),
       pool.query(`SELECT COALESCE(SUM(GREATEST(0, EXTRACT(EPOCH FROM (out_log.timestamp_utc - in_log.timestamp_utc))/60 - COALESCE(sh.overtime_after_minutes, 480))), 0)::int AS overtime_minutes
         FROM attendance_logs in_log JOIN attendance_logs out_log ON out_log.staff_id = in_log.staff_id
           AND out_log.action = 'clock_out' AND out_log.timestamp_utc::date = in_log.timestamp_utc::date
-        LEFT JOIN staff_shifts ss ON ss.staff_id = in_log.staff_id LEFT JOIN shifts sh ON sh.id = ss.shift_id
+        LEFT JOIN staff staff_member ON staff_member.id = in_log.staff_id
+        LEFT JOIN departments d ON d.id = staff_member.department_id
+        LEFT JOIN staff_shifts ss ON ss.staff_id = in_log.staff_id LEFT JOIN shifts sh ON sh.id = COALESCE(ss.shift_id, d.shift_id)
         WHERE in_log.action = 'clock_in' AND in_log.timestamp_utc >= $1::date AND in_log.timestamp_utc < ($2::date + 1)`, [from, to]),
     ]);
     let leaveDays = 0;
