@@ -64,7 +64,9 @@ router.get('/', async (req, res) => {
     const { rows } = await pool.query(`
       SELECT
         s.id, s.employee_id, s.full_name, s.email, s.phone,
-        s.status, s.enrolled_at, s.created_at,
+        s.status, s.enrolled_at, s.created_at, s.department_id, s.team_id, s.role_title,
+        d.name AS department_name, t.name AS team_name,
+        sh.id AS shift_id, sh.name AS shift_name,
         si.id as site_id, si.name as site_name,
         (
           SELECT timestamp_utc
@@ -74,6 +76,10 @@ router.get('/', async (req, res) => {
         ) as last_clock_in
       FROM staff s
       LEFT JOIN sites si ON si.id = s.site_id
+      LEFT JOIN departments d ON d.id = s.department_id
+      LEFT JOIN teams t ON t.id = s.team_id
+      LEFT JOIN staff_shifts ss ON ss.staff_id = s.id
+      LEFT JOIN shifts sh ON sh.id = ss.shift_id AND sh.is_active = true
       ORDER BY s.full_name
     `);
     res.json(rows);
@@ -87,9 +93,14 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT s.*, si.name as site_name
+      SELECT s.*, si.name as site_name, d.name AS department_name, t.name AS team_name,
+        sh.id AS shift_id, sh.name AS shift_name
       FROM staff s
       LEFT JOIN sites si ON si.id = s.site_id
+      LEFT JOIN departments d ON d.id = s.department_id
+      LEFT JOIN teams t ON t.id = s.team_id
+      LEFT JOIN staff_shifts ss ON ss.staff_id = s.id
+      LEFT JOIN shifts sh ON sh.id = ss.shift_id AND sh.is_active = true
       WHERE s.id = $1
     `, [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Staff not found' });
@@ -108,6 +119,9 @@ router.post(
     body('full_name').trim().isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
     body('email').optional({ checkFalsy: true }).isEmail().normalizeEmail().withMessage('Invalid email address'),
     body('site_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid site ID'),
+    body('department_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid department ID'),
+    body('team_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid team ID'),
+    body('role_title').optional({ checkFalsy: true }).trim().isLength({ max: 150 }),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -115,7 +129,7 @@ router.post(
       return res.status(400).json({ error: errors.array()[0].msg, errors: errors.array() });
     }
 
-    const { employee_id, full_name, email, phone, site_id } = req.body;
+    const { employee_id, full_name, email, phone, site_id, department_id, team_id, role_title, shift_id } = req.body;
     try {
       const cleanEmail = email && email.trim() ? email.trim() : null;
       const cleanPhone = phone && phone.trim() ? phone.trim() : null;
@@ -123,10 +137,10 @@ router.post(
       const createdBy = req.hrUser?.id || null;
 
       const insertStaff = async (creatorId) => pool.query(
-        `INSERT INTO staff (id, employee_id, full_name, email, phone, site_id, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
+        `INSERT INTO staff (id, employee_id, full_name, email, phone, site_id, department_id, team_id, role_title, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
          RETURNING *`,
-        [uuidv4(), employee_id.trim().toUpperCase(), full_name.trim(), cleanEmail, cleanPhone, cleanSiteId, creatorId]
+        [uuidv4(), employee_id.trim().toUpperCase(), full_name.trim(), cleanEmail, cleanPhone, cleanSiteId, department_id || null, team_id || null, role_title || null, creatorId]
       );
 
       let result;
@@ -139,6 +153,11 @@ router.post(
           throw err;
         }
       }
+      if (shift_id) await pool.query(
+        `INSERT INTO staff_shifts (staff_id, shift_id) VALUES ($1, $2)
+         ON CONFLICT (staff_id) DO UPDATE SET shift_id = EXCLUDED.shift_id, effective_from = CURRENT_DATE`,
+        [result.rows[0].id, shift_id]
+      );
       res.status(201).json(result.rows[0]);
     } catch (err) {
       if (err.code === '23505') return res.status(409).json({ error: 'Employee ID already exists' });
@@ -281,6 +300,9 @@ router.patch(
     body('full_name').optional().trim().isLength({ min: 2 }).withMessage('Full name must be at least 2 characters'),
     body('email').optional({ checkFalsy: true }).isEmail().normalizeEmail().withMessage('Invalid email address'),
     body('site_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid site ID'),
+    body('department_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid department ID'),
+    body('team_id').optional({ checkFalsy: true }).isUUID().withMessage('Invalid team ID'),
+    body('role_title').optional({ checkFalsy: true }).trim().isLength({ max: 150 }),
     body('status').optional().isIn(['active', 'inactive', 'suspended']),
   ],
   async (req, res) => {
@@ -289,7 +311,7 @@ router.patch(
       return res.status(400).json({ error: errors.array()[0].msg, errors: errors.array() });
     }
 
-    const allowed = ['full_name', 'email', 'phone', 'site_id', 'status'];
+    const allowed = ['full_name', 'email', 'phone', 'site_id', 'status', 'department_id', 'team_id', 'role_title'];
     const updates = [];
     const values = [];
     let idx = 1;

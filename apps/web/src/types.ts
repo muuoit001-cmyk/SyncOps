@@ -24,6 +24,13 @@ export interface StaffMember {
   phone?: string;
   site_id?: string;
   site_name?: string;
+  department_id?: string;
+  department_name?: string;
+  team_id?: string;
+  team_name?: string;
+  role_title?: string;
+  shift_id?: string;
+  shift_name?: string;
   status: StaffStatus;
   enrolled_at?: string;
   last_clock_in?: string;

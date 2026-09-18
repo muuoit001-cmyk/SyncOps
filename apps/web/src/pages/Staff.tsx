@@ -11,13 +11,16 @@ interface StaffDrawerProps {
   open: boolean;
   staff?: StaffMember | null;
   sites: Site[];
+  departments: Array<{ id: string; name: string }>;
+  teams: Array<{ id: string; name: string; department_id?: string }>;
+  shifts: Array<{ id: string; name: string; start_time: string; end_time: string }>;
   onClose: () => void;
   onSaved: () => void;
 }
 
-const StaffDrawer: React.FC<StaffDrawerProps> = ({ open, staff, sites, onClose, onSaved }) => {
+const StaffDrawer: React.FC<StaffDrawerProps> = ({ open, staff, sites, departments, teams, shifts, onClose, onSaved }) => {
   const [form, setForm] = useState({
-    employee_id: '', full_name: '', email: '', phone: '', site_id: '', status: 'active',
+    employee_id: '', full_name: '', email: '', phone: '', site_id: '', department_id: '', team_id: '', role_title: '', shift_id: '', status: 'active',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -30,10 +33,14 @@ const StaffDrawer: React.FC<StaffDrawerProps> = ({ open, staff, sites, onClose, 
         email: staff.email || '',
         phone: staff.phone || '',
         site_id: staff.site_id || '',
+        department_id: staff.department_id || '',
+        team_id: staff.team_id || '',
+        role_title: staff.role_title || '',
+        shift_id: staff.shift_id || '',
         status: staff.status,
       });
     } else {
-      setForm({ employee_id: '', full_name: '', email: '', phone: '', site_id: '', status: 'active' });
+      setForm({ employee_id: '', full_name: '', email: '', phone: '', site_id: '', department_id: '', team_id: '', role_title: '', shift_id: '', status: 'active' });
     }
     setError('');
   }, [staff, open]);
@@ -46,6 +53,7 @@ const StaffDrawer: React.FC<StaffDrawerProps> = ({ open, staff, sites, onClose, 
       const payload = { ...form, site_id: form.site_id || null };
       if (staff) {
         await api.patch(`/staff/${staff.id}`, payload);
+        if (form.shift_id) await api.put(`/shifts/assign/${staff.id}`, { shift_id: form.shift_id });
       } else {
         await api.post('/staff', payload);
       }
@@ -97,6 +105,35 @@ const StaffDrawer: React.FC<StaffDrawerProps> = ({ open, staff, sites, onClose, 
                 disabled={!!staff}
                 style={staff ? { background: 'var(--color-bg)', color: 'var(--color-text-muted)' } : {}}
               />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="staff-role" className="form-label">Role / Job Title</label>
+              <input id="staff-role" className="form-input" value={form.role_title} onChange={e => setForm(f => ({ ...f, role_title: e.target.value }))} placeholder="Collection Officer" />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="staff-department" className="form-label">Department</label>
+              <select id="staff-department" className="form-input form-select" value={form.department_id} onChange={e => setForm(f => ({ ...f, department_id: e.target.value, team_id: '' }))}>
+                <option value="">— No department assigned —</option>
+                {departments.map(department => <option key={department.id} value={department.id}>{department.name}</option>)}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="staff-team" className="form-label">Team</label>
+              <select id="staff-team" className="form-input form-select" value={form.team_id} onChange={e => setForm(f => ({ ...f, team_id: e.target.value }))}>
+                <option value="">— No team assigned —</option>
+                {teams.filter(team => !form.department_id || team.department_id === form.department_id).map(team => <option key={team.id} value={team.id}>{team.name}</option>)}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="staff-shift" className="form-label">Assigned Shift</label>
+              <select id="staff-shift" className="form-input form-select" value={form.shift_id} onChange={e => setForm(f => ({ ...f, shift_id: e.target.value }))}>
+                <option value="">— No shift assigned —</option>
+                {shifts.map(shift => <option key={shift.id} value={shift.id}>{shift.name} ({shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)})</option>)}
+              </select>
             </div>
 
             <div className="form-group">
@@ -185,6 +222,9 @@ const Staff: React.FC = () => {
   const canWrite = user?.role !== 'hr';
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [sites, setSites] = useState<Site[]>([]);
+  const [departments, setDepartments] = useState<Array<{ id: string; name: string }>>([]);
+  const [teams, setTeams] = useState<Array<{ id: string; name: string; department_id?: string }>>([]);
+  const [shifts, setShifts] = useState<Array<{ id: string; name: string; start_time: string; end_time: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -196,9 +236,12 @@ const Staff: React.FC = () => {
 
   const fetchData = useCallback(async () => {
     try {
-      const [staffRes, sitesRes] = await Promise.all([api.get('/staff'), api.get('/sites')]);
+      const [staffRes, sitesRes, organizationRes] = await Promise.all([api.get('/staff'), api.get('/sites'), api.get('/organization/overview')]);
       setStaffList(staffRes.data);
       setSites(sitesRes.data);
+      setDepartments(organizationRes.data.departments);
+      setTeams(organizationRes.data.teams);
+      setShifts(organizationRes.data.shifts);
     } catch (err) {
       console.error(err);
     } finally {
@@ -476,6 +519,9 @@ const Staff: React.FC = () => {
         open={drawerOpen}
         staff={editingStaff}
         sites={sites}
+        departments={departments}
+        teams={teams}
+        shifts={shifts}
         onClose={() => setDrawerOpen(false)}
         onSaved={fetchData}
       />

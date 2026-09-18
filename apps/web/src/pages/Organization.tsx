@@ -43,6 +43,15 @@ const Organization: React.FC = () => {
     }
   };
 
+  const updateLeave = async (id: string, status: 'approved' | 'rejected') => {
+    try {
+      await api.patch(`/organization/leave-requests/${id}`, { status });
+      load();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Could not update leave request');
+    }
+  };
+
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     if (tab === 'departments') return create('/organization/departments', form);
@@ -88,7 +97,7 @@ const Organization: React.FC = () => {
             {tab === 'departments' && <div className="table-wrapper"><table><thead><tr><th>Name</th><th>Code</th><th>Employees</th></tr></thead><tbody>{data.departments.map(item => <tr key={item.id}><td>{item.name}</td><td><code>{item.code}</code></td><td>{item.staff_count}</td></tr>)}</tbody></table></div>}
             {tab === 'teams' && <div className="table-wrapper"><table><thead><tr><th>Team</th><th>Department</th><th>Branch</th><th>Leader</th><th>Employees</th></tr></thead><tbody>{data.teams.map(item => <tr key={item.id}><td>{item.name}<small style={{ display: 'block', color: 'var(--color-text-muted)' }}>{item.code}</small></td><td>{item.department_name || '—'}</td><td>{item.site_name || '—'}</td><td>{item.leader_name || 'Unassigned'}</td><td>{item.staff_count}</td></tr>)}</tbody></table></div>}
             {tab === 'shifts' && <div className="table-wrapper"><table><thead><tr><th>Shift</th><th>Schedule</th><th>Grace</th><th>Assigned</th></tr></thead><tbody>{data.shifts.map(item => <tr key={item.id}><td>{item.name}</td><td>{item.start_time.slice(0, 5)} - {item.end_time.slice(0, 5)}</td><td>{item.grace_minutes} min</td><td>{item.staff_count}</td></tr>)}</tbody></table></div>}
-            {tab === 'leave' && <><div className="table-wrapper"><table><thead><tr><th>Leave type</th><th>Code</th><th>Allowance</th></tr></thead><tbody>{data.leaveTypes.map(item => <tr key={item.id}><td>{item.name}</td><td><code>{item.code}</code></td><td>{item.days_per_year} days</td></tr>)}</tbody></table></div><h3 style={{ margin: '1.5rem 0 0.75rem' }}>Pending requests</h3><div className="table-wrapper"><table><thead><tr><th>Employee</th><th>Leave</th><th>Dates</th><th>Days</th></tr></thead><tbody>{data.pendingLeave.map(item => <tr key={item.id}><td>{item.full_name}<small style={{ display: 'block', color: 'var(--color-text-muted)' }}>{item.employee_id}</small></td><td>{item.leave_type_name}</td><td>{item.starts_on} - {item.ends_on}</td><td>{item.days}</td></tr>)}</tbody></table></div></>}
+            {tab === 'leave' && <><div className="table-wrapper"><table><thead><tr><th>Leave type</th><th>Code</th><th>Allowance</th></tr></thead><tbody>{data.leaveTypes.map(item => <tr key={item.id}><td>{item.name}</td><td><code>{item.code}</code></td><td>{item.days_per_year} days</td></tr>)}</tbody></table></div><h3 style={{ margin: '1.5rem 0 0.75rem' }}>Pending requests</h3><div className="table-wrapper"><table><thead><tr><th>Employee</th><th>Leave</th><th>Dates</th><th>Days</th><th>Actions</th></tr></thead><tbody>{data.pendingLeave.map(item => <tr key={item.id}><td>{item.full_name}<small style={{ display: 'block', color: 'var(--color-text-muted)' }}>{item.employee_id}</small></td><td>{item.leave_type_name}</td><td>{item.starts_on} - {item.ends_on}</td><td>{item.days}</td><td><button className="btn btn-primary btn-sm" onClick={() => updateLeave(item.id, 'approved')}>Approve</button> <button className="btn btn-danger btn-sm" onClick={() => updateLeave(item.id, 'rejected')}>Reject</button></td></tr>)}</tbody></table></div></>}
           </div>
         </div>
       )}
