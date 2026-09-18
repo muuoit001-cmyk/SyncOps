@@ -17,6 +17,7 @@ import UnlockScreen from './src/screens/UnlockScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import ConfirmScreen from './src/screens/ConfirmScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
+import LeaveScreen from './src/screens/LeaveScreen';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -58,6 +59,15 @@ function MainTabs() {
             <Text style={{ fontSize: 22, lineHeight: 28, color }}>📋</Text>
           ),
           tabBarAccessibilityLabel: 'View attendance history',
+        }}
+      />
+      <Tab.Screen
+        name="Leave"
+        component={LeaveScreen}
+        options={{
+          tabBarLabel: 'Leave',
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, lineHeight: 28, color }}>🗓</Text>,
+          tabBarAccessibilityLabel: 'View leave',
         }}
       />
     </Tab.Navigator>

@@ -15,6 +15,14 @@ const router = express.Router();
 // ── GET /api/attendance/today-status (mobile — check today's status) ───────
 router.get('/today-status', deviceAuth, async (req, res) => {
   try {
+    const { rows: leaveRows } = await pool.query(
+      `SELECT lr.id, lt.name AS leave_type_name, lr.starts_on, lr.ends_on
+       FROM leave_requests lr JOIN leave_types lt ON lt.id = lr.leave_type_id
+       WHERE lr.staff_id = $1 AND lr.status = 'approved'
+         AND (timezone('UTC', NOW()))::date BETWEEN lr.starts_on AND lr.ends_on
+       LIMIT 1`,
+      [req.staffMember.id]
+    );
     const { rows } = await pool.query(
       `SELECT action, timestamp_utc FROM attendance_logs
        WHERE staff_id = $1
@@ -30,6 +38,8 @@ router.get('/today-status', deviceAuth, async (req, res) => {
       hasClockOut,
       isComplete: hasClockIn && hasClockOut,
       nextAction: !hasClockIn ? 'clock_in' : (!hasClockOut ? 'clock_out' : null),
+      onLeave: leaveRows.length > 0,
+      leave: leaveRows[0] || null,
       todayLogs: rows,
     });
   } catch (err) {
@@ -49,6 +59,16 @@ router.post('/clock', deviceAuth, async (req, res) => {
   const serverTime = new Date();
 
   try {
+    const { rows: leaveRows } = await pool.query(
+      `SELECT lt.name AS leave_type_name FROM leave_requests lr
+       JOIN leave_types lt ON lt.id = lr.leave_type_id
+       WHERE lr.staff_id = $1 AND lr.status = 'approved'
+         AND (timezone('UTC', NOW()))::date BETWEEN lr.starts_on AND lr.ends_on LIMIT 1`,
+      [req.staffMember.id]
+    );
+    if (leaveRows.length) {
+      return res.status(409).json({ error: `You are on approved ${leaveRows[0].leave_type_name} leave today. Attendance is not required.`, code: 'ON_LEAVE' });
+    }
     // ── Enforce once-in, once-out per calendar day ──────────────────────────
     const { rows: todayRows } = await pool.query(
       `SELECT action, timestamp_utc FROM attendance_logs
@@ -226,10 +246,56 @@ router.get('/me', deviceAuth, async (req, res) => {
   }
 });
 
+// ── GET /api/attendance/leave (mobile — approved and pending leave) ──────
+router.get('/leave', deviceAuth, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT lr.id, lr.starts_on, lr.ends_on, lr.days, lr.reason, lr.status,
+          lt.name AS leave_type_name
+       FROM leave_requests lr JOIN leave_types lt ON lt.id = lr.leave_type_id
+       WHERE lr.staff_id = $1 ORDER BY lr.starts_on DESC`,
+      [req.staffMember.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch leave' });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────
 // HR DASHBOARD ENDPOINTS (JWT-authenticated)
 // ─────────────────────────────────────────────────────────────────────────
 router.use(authJwt);
+
+// ── GET /api/attendance/daily (HR — one row per employee per day) ────────
+router.get('/daily', async (req, res) => {
+  const from = req.query.from || new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const to = req.query.to || new Date().toISOString().slice(0, 10);
+  try {
+    const { rows } = await pool.query(
+      `WITH days AS (SELECT generate_series($1::date, $2::date, '1 day')::date AS day)
+       SELECT s.id AS staff_id, s.employee_id, s.full_name, si.name AS site_name, days.day,
+         CASE WHEN lr.id IS NOT NULL THEN 'leave'
+              WHEN ci.id IS NOT NULL AND co.id IS NOT NULL THEN 'present'
+              WHEN ci.id IS NOT NULL THEN 'missing_clock_out'
+              ELSE 'absent' END AS status,
+         ci.timestamp_utc AS clock_in, co.timestamp_utc AS clock_out,
+         lt.name AS leave_type_name
+       FROM staff s CROSS JOIN days
+       LEFT JOIN sites si ON si.id = s.site_id
+       LEFT JOIN attendance_logs ci ON ci.staff_id = s.id AND ci.action = 'clock_in' AND ci.is_accepted = true AND ci.timestamp_utc::date = days.day
+       LEFT JOIN attendance_logs co ON co.staff_id = s.id AND co.action = 'clock_out' AND co.is_accepted = true AND co.timestamp_utc::date = days.day
+       LEFT JOIN leave_requests lr ON lr.staff_id = s.id AND lr.status = 'approved' AND days.day BETWEEN lr.starts_on AND lr.ends_on
+       LEFT JOIN leave_types lt ON lt.id = lr.leave_type_id
+       WHERE s.status = 'active' ORDER BY days.day DESC, s.full_name`,
+      [from, to]
+    );
+    res.json({ from, to, rows });
+  } catch (err) {
+    console.error('daily attendance error:', err);
+    res.status(500).json({ error: 'Failed to build daily attendance report' });
+  }
+});
 
 // ── GET /api/attendance  (HR — full log with filters) ─────────────────────
 router.get(

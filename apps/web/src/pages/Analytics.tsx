@@ -4,8 +4,8 @@ import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Too
 import api from '../services/api';
 
 interface AnalyticsData {
-  summary: { active_staff: number; clock_ins: number; clock_outs: number; flagged: number; outside_fence: number; offline_sync: number };
-  daily: Array<{ day: string; clock_ins: number; clock_outs: number; flagged: number; outside_fence: number }>;
+  summary: { active_staff: number; clock_ins: number; clock_outs: number; flagged: number; outside_fence: number; offline_sync: number; leave_days: number };
+  daily: Array<{ day: string; clock_ins: number; clock_outs: number; flagged: number; outside_fence: number; leave_count: number }>;
   sites: Array<{ site_name: string; clock_ins: number; flagged: number; outside_fence: number; employees_present: number }>;
   flags: Array<{ flag_reason: string; count: number }>;
   late: Array<{ full_name: string; employee_id: string; site_name: string; timestamp_utc: string; shift_name: string; minutes_late: number }>;
@@ -18,12 +18,16 @@ const Analytics: React.FC = () => {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(30);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const to = new Date();
     const from = new Date(Date.now() - days * 86400000);
+    setLoading(true);
+    setError('');
     api.get('/analytics', { params: { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) } })
       .then(response => setData(response.data))
+      .catch(err => setError(err.response?.data?.error || err.message || 'Unable to load analytics'))
       .finally(() => setLoading(false));
   }, [days]);
 
@@ -35,7 +39,7 @@ const Analytics: React.FC = () => {
           <option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
         </select>
       </div>
-      {loading || !data ? <div className="card">Loading analytics...</div> : (
+      {loading ? <div className="card">Loading analytics...</div> : error ? <div className="card" role="alert" style={{ color: 'var(--color-error)' }}>{error}<button className="btn btn-secondary btn-sm" style={{ marginLeft: '1rem' }} onClick={() => setDays(value => value)}>Retry</button></div> : !data ? <div className="card">No analytics data available.</div> : (
         <>
           <div className="summary-grid" style={{ marginBottom: '1rem' }}>
             <div className="summary-card"><div className="summary-card-icon" style={{ background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}><Users size={20} /></div><div className="summary-card-label">Active employees</div><div className="summary-card-value">{data.summary.active_staff}</div></div>
