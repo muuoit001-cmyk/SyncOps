@@ -24,7 +24,8 @@
       ],
       "adaptiveIcon": {
         "backgroundColor": "#2563EB"
-      }
+      },
+      "versionCode": 2
     },
     "plugins": [
       "expo-local-authentication",
@@ -37,7 +38,10 @@
       "expo-secure-store"
     ],
     "extra": {
-      "apiUrl": "https://syncops-production-f5ac.up.railway.app/api"
+      "apiUrl": "https://syncops-production-f5ac.up.railway.app/api",
+      "eas": {
+        "projectId": "0b956235-fdaf-4d14-9e5b-1a8b6f93d8d2"
+      }
     }
   }
 }
