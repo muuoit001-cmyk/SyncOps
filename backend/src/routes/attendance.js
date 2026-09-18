@@ -249,16 +249,53 @@ router.get('/me', deviceAuth, async (req, res) => {
 // ── GET /api/attendance/leave (mobile — approved and pending leave) ──────
 router.get('/leave', deviceAuth, async (req, res) => {
   try {
-    const { rows } = await pool.query(
+    const [requests, leaveTypes] = await Promise.all([
+      pool.query(
       `SELECT lr.id, lr.starts_on, lr.ends_on, lr.days, lr.reason, lr.status,
           lt.name AS leave_type_name
        FROM leave_requests lr JOIN leave_types lt ON lt.id = lr.leave_type_id
        WHERE lr.staff_id = $1 ORDER BY lr.starts_on DESC`,
       [req.staffMember.id]
-    );
-    res.json(rows);
+      ),
+      pool.query(`SELECT id, name, code, days_per_year FROM leave_types WHERE is_active = true ORDER BY name`),
+    ]);
+    res.json({ requests: requests.rows, leaveTypes: leaveTypes.rows });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch leave' });
+  }
+});
+
+// ── POST /api/attendance/leave (mobile — apply for leave) ────────────────
+router.post('/leave', deviceAuth, [
+  body('leave_type_id').isUUID().withMessage('A valid leave type is required'),
+  body('starts_on').isISO8601().withMessage('Start date must use YYYY-MM-DD'),
+  body('ends_on').isISO8601().withMessage('End date must use YYYY-MM-DD'),
+  body('reason').optional({ checkFalsy: true }).trim().isLength({ max: 1000 }).withMessage('Reason is too long'),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg, errors: errors.array() });
+  const { leave_type_id, starts_on, ends_on, reason } = req.body;
+  const start = new Date(`${starts_on}T00:00:00Z`);
+  const end = new Date(`${ends_on}T00:00:00Z`);
+  const days = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+  if (days < 1) return res.status(400).json({ error: 'End date must be on or after start date' });
+  try {
+    const { rows: overlap } = await pool.query(
+      `SELECT id FROM leave_requests
+       WHERE staff_id = $1 AND status IN ('pending', 'approved')
+         AND starts_on <= $3::date AND ends_on >= $2::date LIMIT 1`,
+      [req.staffMember.id, starts_on, ends_on]
+    );
+    if (overlap.length) return res.status(409).json({ error: 'You already have a pending or approved leave request covering these dates.' });
+    const { rows } = await pool.query(
+      `INSERT INTO leave_requests (id, staff_id, leave_type_id, starts_on, ends_on, days, reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [uuidv4(), req.staffMember.id, leave_type_id, starts_on, ends_on, days, reason || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error('mobile leave application error:', err);
+    res.status(400).json({ error: 'Could not submit leave application' });
   }
 });
 
