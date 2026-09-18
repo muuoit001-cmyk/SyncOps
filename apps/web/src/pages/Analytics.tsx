@@ -19,6 +19,7 @@ const Analytics: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(30);
   const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const to = new Date();
@@ -29,7 +30,7 @@ const Analytics: React.FC = () => {
       .then(response => setData(response.data))
       .catch(err => setError(err.response?.data?.error || err.message || 'Unable to load analytics'))
       .finally(() => setLoading(false));
-  }, [days]);
+  }, [days, reloadKey]);
 
   return (
     <div className="animate-fade-in">
@@ -39,7 +40,7 @@ const Analytics: React.FC = () => {
           <option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option>
         </select>
       </div>
-      {loading ? <div className="card">Loading analytics...</div> : error ? <div className="card" role="alert" style={{ color: 'var(--color-error)' }}>{error}<button className="btn btn-secondary btn-sm" style={{ marginLeft: '1rem' }} onClick={() => setDays(value => value)}>Retry</button></div> : !data ? <div className="card">No analytics data available.</div> : (
+      {loading ? <div className="card">Loading analytics...</div> : error ? <div className="card" role="alert" style={{ color: 'var(--color-error)' }}>{error}<button className="btn btn-secondary btn-sm" style={{ marginLeft: '1rem' }} onClick={() => setReloadKey(value => value + 1)}>Retry</button></div> : !data ? <div className="card">No analytics data available.</div> : (
         <>
           <div className="summary-grid" style={{ marginBottom: '1rem' }}>
             <div className="summary-card"><div className="summary-card-icon" style={{ background: 'var(--color-primary-light)', color: 'var(--color-primary)' }}><Users size={20} /></div><div className="summary-card-label">Active employees</div><div className="summary-card-value">{data.summary.active_staff}</div></div>

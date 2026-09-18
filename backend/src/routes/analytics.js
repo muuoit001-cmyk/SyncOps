@@ -16,9 +16,7 @@ router.get('/', async (req, res) => {
             COUNT(*) FILTER (WHERE action = 'clock_out')::int AS clock_outs,
             COUNT(*) FILTER (WHERE is_flagged)::int AS flagged,
             COUNT(*) FILTER (WHERE action = 'clock_in' AND is_within_fence = false)::int AS outside_fence,
-            COUNT(*) FILTER (WHERE action = 'clock_in' AND is_offline_sync)::int AS offline_sync,
-            COALESCE((SELECT SUM((ends_on - starts_on) + 1)::int FROM leave_requests
-              WHERE status = 'approved' AND starts_on <= $2::date AND ends_on >= $1::date), 0)::int AS leave_days
+            COUNT(*) FILTER (WHERE action = 'clock_in' AND is_offline_sync)::int AS offline_sync
           FROM attendance_logs WHERE timestamp_utc >= $1::date AND timestamp_utc < ($2::date + 1)
         ) SELECT active.total AS active_staff, events.* FROM active CROSS JOIN events`, [from, to]),
       pool.query(`WITH days AS (
@@ -34,9 +32,7 @@ router.get('/', async (req, res) => {
         ) SELECT days.day, COALESCE(events.clock_ins, 0)::int AS clock_ins,
           COALESCE(events.clock_outs, 0)::int AS clock_outs,
           COALESCE(events.flagged, 0)::int AS flagged,
-          COALESCE(events.outside_fence, 0)::int AS outside_fence,
-          (SELECT COUNT(DISTINCT lr.staff_id)::int FROM leave_requests lr
-            WHERE lr.status = 'approved' AND days.day BETWEEN lr.starts_on AND lr.ends_on) AS leave_count
+          COALESCE(events.outside_fence, 0)::int AS outside_fence
         FROM days LEFT JOIN events ON events.day = days.day ORDER BY days.day`, [from, to]),
       pool.query(`SELECT COALESCE(si.name, 'Unassigned') AS site_name,
         COUNT(*) FILTER (WHERE al.action = 'clock_in')::int AS clock_ins,
@@ -84,8 +80,31 @@ router.get('/', async (req, res) => {
         LEFT JOIN staff_shifts ss ON ss.staff_id = in_log.staff_id LEFT JOIN shifts sh ON sh.id = ss.shift_id
         WHERE in_log.action = 'clock_in' AND in_log.timestamp_utc >= $1::date AND in_log.timestamp_utc < ($2::date + 1)`, [from, to]),
     ]);
+    let leaveDays = 0;
+    let leaveByDay = new Map();
+    try {
+      const leaveResult = await pool.query(
+        `SELECT starts_on, ends_on, days FROM leave_requests
+         WHERE status = 'approved' AND starts_on <= $2::date AND ends_on >= $1::date`,
+        [from, to]
+      );
+      leaveDays = leaveResult.rows.reduce((total, row) => total + Number(row.days || 0), 0);
+      for (const row of leaveResult.rows) {
+        const start = new Date(`${row.starts_on}T00:00:00Z`);
+        const end = new Date(`${row.ends_on}T00:00:00Z`);
+        for (let date = new Date(start); date <= end; date.setUTCDate(date.getUTCDate() + 1)) {
+          const key = date.toISOString().slice(0, 10);
+          leaveByDay.set(key, (leaveByDay.get(key) || 0) + 1);
+        }
+      }
+    } catch (leaveErr) {
+      console.warn('Leave metrics unavailable; run the leave schema migration:', leaveErr.message);
+    }
     res.json({
-      from, to, summary: summary.rows[0], daily: daily.rows, sites: sites.rows,
+      from, to,
+      summary: { ...summary.rows[0], leave_days: leaveDays },
+      daily: daily.rows.map(row => ({ ...row, leave_count: leaveByDay.get(String(row.day).slice(0, 10)) || 0 })),
+      sites: sites.rows,
       flags: flags.rows, late: late.rows, gps: gps.rows, employees: employees.rows,
       overtimeMinutes: overtime.rows[0]?.overtime_minutes || 0,
     });
