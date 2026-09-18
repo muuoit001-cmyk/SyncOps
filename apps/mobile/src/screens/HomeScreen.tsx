@@ -276,7 +276,7 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
           {fenceStatus === 'no_site' && (
             <View style={styles.fenceMessage} accessibilityRole="alert">
-              <Text style={styles.fenceMessageText}>No site assigned. Contact your HR team.</Text>
+              <Text style={styles.fenceMessageText}>No site assigned. Contact your ICT TEAM.</Text>
             </View>
           )}
 

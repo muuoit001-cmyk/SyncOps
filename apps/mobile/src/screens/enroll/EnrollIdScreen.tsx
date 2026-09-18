@@ -36,7 +36,7 @@ const EnrollIdScreen: React.FC<Props> = ({ navigation }) => {
       } else if (err.code === 'ERR_NETWORK' || !err.response) {
         setError(`Cannot reach the SyncOps server. Check that this phone has internet access, then try again. Server: ${getApiBaseUrl()}`);
       } else {
-        const msg = err.response?.data?.error || 'Employee ID not found. Contact your HR team.';
+        const msg = err.response?.data?.error || 'Employee ID not found. Contact your ICT TEAM.';
         setError(msg);
       }
     } finally {
@@ -62,7 +62,7 @@ const EnrollIdScreen: React.FC<Props> = ({ navigation }) => {
           <Text style={styles.title}>SyncOps</Text>
           <Text style={styles.subtitle}>Staff Enrollment</Text>
           <Text style={styles.description}>
-            Enter the Employee ID provided by your HR team to get started.
+            Enter the Employee ID provided by your ICT TEAM to get started.
           </Text>
 
           <View style={styles.card}>
@@ -78,7 +78,7 @@ const EnrollIdScreen: React.FC<Props> = ({ navigation }) => {
               returnKeyType="go"
               onSubmitEditing={handleLookup}
               accessibilityLabel="Employee ID input"
-              accessibilityHint="Enter the employee ID given to you by HR"
+              accessibilityHint="Enter the employee ID given to you by ICT TEAM"
             />
 
             <Text style={styles.label}>One-time enrollment code</Text>
@@ -86,7 +86,7 @@ const EnrollIdScreen: React.FC<Props> = ({ navigation }) => {
               style={[styles.input, error ? styles.inputError : null]}
               value={enrollmentCode}
               onChangeText={t => { setEnrollmentCode(t); setError(''); }}
-              placeholder="Provided by HR"
+              placeholder="Provided by ICT TEAM"
               placeholderTextColor={colors.textMuted}
               autoCapitalize="characters"
               autoCorrect={false}
@@ -116,7 +116,7 @@ const EnrollIdScreen: React.FC<Props> = ({ navigation }) => {
           </View>
 
           <Text style={styles.footer}>
-            Don't have an ID? Contact your HR team to get enrolled.
+            Don't have an ID? Contact your ICT TEAM to get enrolled.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>

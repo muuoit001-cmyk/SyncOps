@@ -83,7 +83,7 @@ const EnrollBiometricScreen: React.FC<Props> = ({ navigation, route }) => {
       if (data.isNewDevice) {
         Alert.alert(
           'New Device Registered',
-          'Your HR team has been notified of this new device registration.',
+          'Your ICT TEAM has been notified of this new device registration.',
           [{ text: 'OK', onPress: () => navigation.replace('EnrollDone') }]
         );
       } else {
