@@ -42,21 +42,31 @@ router.get('/', async (req, res) => {
         FROM attendance_logs al LEFT JOIN sites si ON si.id = al.site_id
         WHERE al.timestamp_utc >= $1::date AND al.timestamp_utc < ($2::date + 1)
         GROUP BY si.name ORDER BY clock_ins DESC`, [from, to]),
-      pool.query(`SELECT flag_reason, COUNT(*)::int AS count FROM attendance_logs,
-        unnest(COALESCE(flag_reason, ARRAY[]::text[])) AS flag_reason
+      // FIX: guard against null flag_reason arrays before unnesting
+      pool.query(`SELECT flag_reason, COUNT(*)::int AS count
+        FROM attendance_logs,
+          unnest(COALESCE(flag_reason, ARRAY[]::text[])) AS flag_reason
         WHERE timestamp_utc >= $1::date AND timestamp_utc < ($2::date + 1)
+          AND flag_reason IS NOT NULL AND cardinality(flag_reason) > 0
         GROUP BY flag_reason ORDER BY count DESC`, [from, to]),
+      // FIX: use AT TIME ZONE with shift timezone for accurate late detection
       pool.query(`SELECT s.full_name, s.employee_id, COALESCE(si.name, 'Unassigned') AS site_name,
           al.timestamp_utc, sh.name AS shift_name, sh.start_time,
-          ROUND(EXTRACT(EPOCH FROM (al.timestamp_utc::time - sh.start_time -
-            make_interval(mins => COALESCE(sh.grace_minutes, 0)))) / 60)::int AS minutes_late
+          ROUND(EXTRACT(EPOCH FROM (
+            (al.timestamp_utc AT TIME ZONE COALESCE(sh.timezone, 'UTC'))::time
+            - sh.start_time
+            - make_interval(mins => COALESCE(sh.grace_minutes, 0))
+          )) / 60)::int AS minutes_late
         FROM attendance_logs al JOIN staff s ON s.id = al.staff_id
         LEFT JOIN sites si ON si.id = al.site_id
         LEFT JOIN departments d ON d.id = s.department_id
         LEFT JOIN staff_shifts ss ON ss.staff_id = s.id
         LEFT JOIN shifts sh ON sh.id = COALESCE(ss.shift_id, d.shift_id)
-        WHERE al.action = 'clock_in' AND al.timestamp_utc >= $1::date AND al.timestamp_utc < ($2::date + 1)
-          AND al.timestamp_utc::time > sh.start_time + make_interval(mins => COALESCE(sh.grace_minutes, 0))
+        WHERE al.action = 'clock_in'
+          AND al.timestamp_utc >= $1::date AND al.timestamp_utc < ($2::date + 1)
+          AND sh.id IS NOT NULL
+          AND (al.timestamp_utc AT TIME ZONE COALESCE(sh.timezone, 'UTC'))::time
+            > sh.start_time + make_interval(mins => COALESCE(sh.grace_minutes, 0))
         ORDER BY al.timestamp_utc DESC LIMIT 100`, [from, to]),
       pool.query(`SELECT s.full_name, s.employee_id, COALESCE(si.name, 'Unassigned') AS site_name,
           al.action, al.timestamp_utc, al.lat, al.lng, al.gps_accuracy_m,
@@ -84,12 +94,17 @@ router.get('/', async (req, res) => {
         LEFT JOIN staff_shifts ss ON ss.staff_id = in_log.staff_id LEFT JOIN shifts sh ON sh.id = COALESCE(ss.shift_id, d.shift_id)
         WHERE in_log.action = 'clock_in' AND in_log.timestamp_utc >= $1::date AND in_log.timestamp_utc < ($2::date + 1)`, [from, to]),
     ]);
+
+    // Leave metrics — aggregated per day and total
     let leaveDays = 0;
     let leaveByDay = new Map();
+    let leaveByType = [];
     try {
       const leaveResult = await pool.query(
-        `SELECT starts_on, ends_on, days FROM leave_requests
-         WHERE status = 'approved' AND starts_on <= $2::date AND ends_on >= $1::date`,
+        `SELECT lr.starts_on, lr.ends_on, lr.days, lt.name AS leave_type_name
+         FROM leave_requests lr
+         JOIN leave_types lt ON lt.id = lr.leave_type_id
+         WHERE lr.status = 'approved' AND lr.starts_on <= $2::date AND lr.ends_on >= $1::date`,
         [from, to]
       );
       leaveDays = leaveResult.rows.reduce((total, row) => total + Number(row.days || 0), 0);
@@ -101,15 +116,35 @@ router.get('/', async (req, res) => {
           leaveByDay.set(key, (leaveByDay.get(key) || 0) + 1);
         }
       }
+
+      // Leave by type summary
+      const leaveTypeResult = await pool.query(
+        `SELECT lt.name AS leave_type_name, COUNT(lr.id)::int AS request_count,
+           SUM(lr.days)::int AS total_days
+         FROM leave_requests lr JOIN leave_types lt ON lt.id = lr.leave_type_id
+         WHERE lr.status = 'approved' AND lr.starts_on <= $2::date AND lr.ends_on >= $1::date
+         GROUP BY lt.name ORDER BY total_days DESC`,
+        [from, to]
+      );
+      leaveByType = leaveTypeResult.rows;
     } catch (leaveErr) {
       console.warn('Leave metrics unavailable; run the leave schema migration:', leaveErr.message);
     }
+
     res.json({
       from, to,
       summary: { ...summary.rows[0], leave_days: leaveDays },
-      daily: daily.rows.map(row => ({ ...row, leave_count: leaveByDay.get(String(row.day).slice(0, 10)) || 0 })),
+      daily: daily.rows.map(row => ({
+        ...row,
+        day: String(row.day).slice(0, 10),
+        leave_count: leaveByDay.get(String(row.day).slice(0, 10)) || 0,
+      })),
       sites: sites.rows,
-      flags: flags.rows, late: late.rows, gps: gps.rows, employees: employees.rows,
+      flags: flags.rows,
+      late: late.rows,
+      gps: gps.rows,
+      employees: employees.rows,
+      leaveByType,
       overtimeMinutes: overtime.rows[0]?.overtime_minutes || 0,
     });
   } catch (err) {

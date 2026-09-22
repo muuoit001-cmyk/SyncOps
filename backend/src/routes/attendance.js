@@ -371,6 +371,65 @@ router.post('/leave/:id/documents', deviceAuth, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────
 router.use(authJwt);
 
+// ── GET /api/attendance/leave/all (HR — all leave requests) ──────────────
+router.get('/leave/all', async (req, res) => {
+  const { status, staff_id, from, to, limit = 100, offset = 0 } = req.query;
+  const conditions = [];
+  const values = [];
+  let idx = 1;
+  if (status) { conditions.push(`lr.status = $${idx++}`); values.push(status); }
+  if (staff_id) { conditions.push(`lr.staff_id = $${idx++}`); values.push(staff_id); }
+  if (from) { conditions.push(`lr.starts_on >= $${idx++}`); values.push(from); }
+  if (to) { conditions.push(`lr.ends_on <= $${idx++}`); values.push(to); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  try {
+    const { rows } = await pool.query(
+      `SELECT lr.id, lr.starts_on, lr.ends_on, lr.days, lr.reason, lr.status,
+          lr.created_at, lr.reviewed_at, lr.reviewer_notes,
+          lt.name AS leave_type_name, lt.code AS leave_type_code,
+          s.full_name, s.employee_id, si.name AS site_name,
+          (SELECT COUNT(*) FROM leave_documents ld WHERE ld.leave_request_id = lr.id)::int AS document_count
+       FROM leave_requests lr
+       JOIN leave_types lt ON lt.id = lr.leave_type_id
+       JOIN staff s ON s.id = lr.staff_id
+       LEFT JOIN sites si ON si.id = s.site_id
+       ${where}
+       ORDER BY lr.created_at DESC
+       LIMIT $${idx++} OFFSET $${idx++}`,
+      [...values, parseInt(limit), parseInt(offset)]
+    );
+    const count = await pool.query(
+      `SELECT COUNT(*) FROM leave_requests lr ${where}`, values
+    );
+    res.json({ requests: rows, total: parseInt(count.rows[0].count) });
+  } catch (err) {
+    console.error('leave/all error:', err);
+    res.status(500).json({ error: 'Failed to fetch leave requests' });
+  }
+});
+
+// ── PATCH /api/attendance/leave/:id/status (HR — approve or reject) ───────
+router.patch('/leave/:id/status', async (req, res) => {
+  const { status, reviewer_notes } = req.body;
+  if (!['approved', 'rejected', 'pending_hr', 'pending_manager'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status value' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `UPDATE leave_requests
+       SET status = $1, reviewed_at = NOW(), reviewer_notes = $2
+       WHERE id = $3
+       RETURNING id, status, reviewed_at`,
+      [status, reviewer_notes || null, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Leave request not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error('leave status update error:', err);
+    res.status(500).json({ error: 'Failed to update leave status' });
+  }
+});
+
 // ── GET /api/attendance/daily (HR — one row per employee per day) ────────
 router.get('/daily', async (req, res) => {
   const from = req.query.from || new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);

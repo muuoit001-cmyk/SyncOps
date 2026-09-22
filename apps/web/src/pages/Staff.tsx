@@ -52,7 +52,19 @@ const StaffDrawer: React.FC<StaffDrawerProps> = ({ open, staff, sites, departmen
     setLoading(true);
     setError('');
     try {
-      const payload = { ...form, site_id: form.site_id || null };
+      // Normalize all optional FK fields: empty string → null to avoid Postgres FK errors
+      const nullify = (v: string) => v && v.trim() ? v.trim() : null;
+      const payload = {
+        ...form,
+        site_id: nullify(form.site_id),
+        department_id: nullify(form.department_id),
+        team_id: nullify(form.team_id),
+        manager_staff_id: nullify(form.manager_staff_id),
+        shift_id: nullify(form.shift_id),
+        email: nullify(form.email),
+        phone: nullify(form.phone),
+        role_title: nullify(form.role_title),
+      };
       if (staff) {
         await api.patch(`/staff/${staff.id}`, payload);
         if (form.shift_id) await api.put(`/shifts/assign/${staff.id}`, { shift_id: form.shift_id });

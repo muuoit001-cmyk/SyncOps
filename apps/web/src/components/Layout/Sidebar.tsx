@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Users, MapPin, ClipboardList,
-  AlertTriangle, ChevronLeft, ChevronRight, Zap, BarChart3, Network,
+  AlertTriangle, ChevronLeft, ChevronRight, Zap, BarChart3, Network, CalendarDays,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -19,6 +19,7 @@ const navItems = [
   { label: 'Attendance Log', icon: ClipboardList, path: '/attendance' },
   { label: 'Flagged Events', icon: AlertTriangle, path: '/flagged', badge: true },
   { label: 'Analytics', icon: BarChart3, path: '/analytics' },
+  { label: 'Leave', icon: CalendarDays, path: '/leave' },
   { label: 'Organization', icon: Network, path: '/organization' },
 ];
 
@@ -41,12 +42,19 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, mobileOpen, flag
         role="navigation"
         aria-label="Main navigation"
       >
-        {/* Logo */}
+        {/* Logo with gradient */}
         <div className="sidebar-logo">
           <div className="sidebar-logo-icon" aria-hidden="true">
-            <Zap size={20} />
+            <Zap size={20} strokeWidth={2.5} />
           </div>
-          {!collapsed && <span className="sidebar-logo-text">SyncOps</span>}
+          {!collapsed && (
+            <div style={{ overflow: 'hidden' }}>
+              <span className="sidebar-logo-text">SyncOps</span>
+              <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.6)', fontWeight: 500, marginTop: -2, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                HR & Workforce
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Nav */}
@@ -68,7 +76,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, mobileOpen, flag
                 title={collapsed ? item.label : undefined}
                 aria-label={item.label}
               >
-                <Icon className="nav-icon" aria-hidden="true" />
+                <Icon className="nav-icon" aria-hidden="true" strokeWidth={isActive ? 2.5 : 2} />
                 {!collapsed && <span>{item.label}</span>}
                 {!collapsed && item.badge && flaggedCount > 0 && (
                   <span className="nav-badge" aria-label={`${flaggedCount} flagged events`}>
@@ -93,15 +101,15 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle, mobileOpen, flag
         </nav>
 
         {/* Collapse toggle (desktop only) */}
-        <div style={{ padding: '0.75rem', borderTop: '1px solid var(--color-border)' }}>
+        <div style={{ padding: '0.75rem', borderTop: '1px solid var(--color-border)', flexShrink: 0 }}>
           <button
             className="btn btn-secondary btn-icon"
             onClick={onToggle}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            style={{ width: '100%' }}
+            style={{ width: '100%', transition: 'all 0.2s' }}
           >
             {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-            {!collapsed && <span style={{ fontSize: '0.8rem', marginLeft: 4 }}>Collapse</span>}
+            {!collapsed && <span style={{ fontSize: '0.8rem', marginLeft: 4, fontWeight: 500 }}>Collapse</span>}
           </button>
         </div>
       </aside>
