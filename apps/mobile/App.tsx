@@ -30,13 +30,21 @@ function MainTabs() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-          height: 60,
-          paddingBottom: 8,
+          borderTopWidth: 0,
+          elevation: 16,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.08,
+          shadowRadius: 12,
+          height: 70,
+          paddingBottom: 12,
+          paddingTop: 8,
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarLabelStyle: { fontSize: fontSize.xs, fontWeight: '600' },
+        tabBarLabelStyle: { fontSize: fontSize.xs, fontWeight: '700', letterSpacing: 0.3 },
       }}
     >
       <Tab.Screen
@@ -44,8 +52,10 @@ function MainTabs() {
         component={HomeScreen}
         options={{
           tabBarLabel: 'Clock',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 22, lineHeight: 28, color }}>⏱</Text>
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.tabIconActive : undefined}>
+              <Text style={{ fontSize: 20, lineHeight: 26, color }}>⏱</Text>
+            </View>
           ),
           tabBarAccessibilityLabel: 'Clock in or out',
         }}
@@ -55,8 +65,10 @@ function MainTabs() {
         component={HistoryScreen}
         options={{
           tabBarLabel: 'History',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 22, lineHeight: 28, color }}>📋</Text>
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.tabIconActive : undefined}>
+              <Text style={{ fontSize: 20, lineHeight: 26, color }}>📋</Text>
+            </View>
           ),
           tabBarAccessibilityLabel: 'View attendance history',
         }}
@@ -66,7 +78,11 @@ function MainTabs() {
         component={LeaveScreen}
         options={{
           tabBarLabel: 'Leave',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 22, lineHeight: 28, color }}>🗓</Text>,
+          tabBarIcon: ({ color, focused }) => (
+            <View style={focused ? styles.tabIconActive : undefined}>
+              <Text style={{ fontSize: 20, lineHeight: 26, color }}>🗓</Text>
+            </View>
+          ),
           tabBarAccessibilityLabel: 'View leave',
         }}
       />
@@ -81,9 +97,12 @@ function AppNavigator() {
   if (isLoading) {
     return (
       <View style={styles.loading} accessible accessibilityRole="progressbar" accessibilityLabel="Loading SyncOps">
-        <Text style={{ fontSize: 36, marginBottom: 16 }}>⚡</Text>
-        <ActivityIndicator color={colors.primary} size="large" />
-        <Text style={styles.loadingText}>SyncOps</Text>
+        <View style={styles.loadingLogo}>
+          <Text style={{ fontSize: 32, lineHeight: 40 }}>⚡</Text>
+        </View>
+        <Text style={styles.loadingBrand}>SyncOps</Text>
+        <Text style={styles.loadingTagline}>HR & Workforce</Text>
+        <ActivityIndicator color={colors.primary} size="large" style={{ marginTop: 32 }} />
       </View>
     );
   }
@@ -144,10 +163,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.bg,
   },
+  loadingLogo: {
+    width: 72, height: 72,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  loadingBrand: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    letterSpacing: -1,
+  },
+  loadingTagline: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    fontWeight: '500',
+    marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
   loadingText: {
     marginTop: 12,
     fontSize: fontSize.base,
     color: colors.textMuted,
     fontWeight: '600',
+  },
+  tabIconActive: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
   },
 });

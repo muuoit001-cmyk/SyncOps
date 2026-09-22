@@ -34,6 +34,7 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [nextAction, setNextAction] = useState<NextClockAction>('clock_in');
   const [lastActionLabel, setLastActionLabel] = useState<string | null>(null);
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
+  const [liveTime, setLiveTime] = useState(new Date());
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -55,6 +56,12 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       else if (status.nextAction === 'clock_out') setNextAction('clock_out');
       else if (status.nextAction === 'clock_in') setNextAction('clock_in');
     });
+  }, []);
+
+  // Live clock — ticks every second
+  useEffect(() => {
+    const id = setInterval(() => setLiveTime(new Date()), 1000);
+    return () => clearInterval(id);
   }, []);
 
   // Get GPS location in background (for clock payload)
@@ -156,7 +163,7 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           ? 'Checking location...'
           : nextAction === 'clock_in' ? 'Clock In' : 'Clock Out';
 
-  const now = new Date();
+  const now = liveTime;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -170,27 +177,40 @@ const HomeScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         showsVerticalScrollIndicator={false}
         bounces={false}
       >
-        {/* Header info */}
+        {/* Premium header with live clock */}
         <View style={styles.header} accessible accessibilityRole="header">
-          <Text style={styles.staffName} accessibilityLabel={`Welcome, ${session?.fullName}`}>
-            {session?.fullName}
-          </Text>
-          <Text style={styles.dateText}>
-            {format(now, 'EEEE, MMMM d')}
-          </Text>
-          {(session?.siteName || siteName) && (
-            <Text style={styles.siteText}>
-              📍 {siteName || session?.siteName}
+          {/* Greeting row */}
+          <View style={styles.greetingRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.greetingSmall}>Welcome back,</Text>
+              <Text style={styles.staffName} accessibilityLabel={`Welcome, ${session?.fullName}`}>
+                {session?.fullName}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.logoutButton}
+              onPress={handleLogout}
+              accessibilityRole="button"
+              accessibilityLabel="Log out"
+            >
+              <Text style={styles.logoutButtonText}>Lock</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Live clock */}
+          <View style={styles.clockContainer}>
+            <Text style={styles.clockTime}>{format(liveTime, 'HH:mm')}
+              <Text style={styles.clockSeconds}>:{format(liveTime, 'ss')}</Text>
             </Text>
+            <Text style={styles.clockDate}>{format(liveTime, 'EEEE, MMMM d, yyyy')}</Text>
+          </View>
+
+          {/* Site badge */}
+          {(session?.siteName || siteName) && (
+            <View style={styles.siteBadge}>
+              <Text style={styles.siteBadgeText}>📍 {siteName || session?.siteName}</Text>
+            </View>
           )}
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={handleLogout}
-            accessibilityRole="button"
-            accessibilityLabel="Log out"
-          >
-            <Text style={styles.logoutButtonText}>Log out</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Central clock button */}
@@ -333,36 +353,81 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xl,
     paddingBottom: spacing.xxl,
   },
-  header: { alignItems: 'center', marginBottom: spacing.xl, width: '100%' },
+  header: { marginBottom: spacing.xl, width: '100%' },
+  greetingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  greetingSmall: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    fontWeight: '500',
+  },
   staffName: {
     fontSize: fontSize.lg,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.textPrimary,
-    letterSpacing: -0.3,
-    textAlign: 'center',
+    letterSpacing: -0.5,
   },
-  dateText: {
+  clockContainer: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+    ...shadow.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  clockTime: {
+    fontSize: fontSize['3xl'],
+    fontWeight: '800',
+    color: colors.primary,
+    letterSpacing: -2,
+    fontVariant: ['tabular-nums'],
+  },
+  clockSeconds: {
+    fontSize: fontSize.xl,
+    fontWeight: '400',
+    color: colors.textMuted,
+    letterSpacing: -1,
+  },
+  clockDate: {
     fontSize: fontSize.sm,
     color: colors.textSecondary,
-    marginTop: 2,
+    marginTop: spacing.xs,
+    fontWeight: '500',
   },
-  siteText: {
-    fontSize: fontSize.xs,
-    color: colors.textMuted,
-    marginTop: 4,
-  },
-  logoutButton: {
-    marginTop: spacing.sm,
+  siteBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.full,
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
+    alignSelf: 'flex-start',
+  },
+  siteBadgeText: {
+    fontSize: fontSize.xs,
+    color: colors.primary,
+    fontWeight: '700',
+  },
+  logoutButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.surface,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   logoutButtonText: {
     color: colors.textSecondary,
     fontSize: fontSize.xs,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   buttonArea: { alignItems: 'center', marginBottom: spacing.xl },
   clockButton: {

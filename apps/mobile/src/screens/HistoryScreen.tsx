@@ -74,43 +74,63 @@ const HistoryScreen: React.FC = () => {
       .finally(() => setLoading(false));
   }, [period, session]);
 
-  const renderEntry = (entry: AttendanceEntry) => (
-    <View
-      key={entry.id}
-      style={[styles.entry, entry.is_flagged && styles.entryFlagged]}
-      accessible
-      accessibilityLabel={`${entry.action === 'clock_in' ? 'Clock in' : 'Clock out'} at ${format(new Date(entry.timestamp_utc), 'h:mm a')}${entry.is_flagged ? ', flagged' : ''}`}
-    >
-      <View style={[styles.entryDot, { backgroundColor: entry.action === 'clock_in' ? colors.success : colors.textMuted }]} />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.entryAction}>
-          {entry.action === 'clock_in' ? '↑ Clocked In' : '↓ Clocked Out'}
-        </Text>
-        {entry.is_flagged && (
-          <Text style={styles.entryFlag}>⚠ Flagged</Text>
-        )}
-      </View>
-      <Text style={styles.entryTime}>
-        {format(new Date(entry.timestamp_utc), 'h:mm a')}
-      </Text>
-    </View>
-  );
-
-  const renderGroup = ({ item }: { item: DayGroup }) => {
-    const d = new Date(item.date);
-    const isToday = isSameDay(d, new Date());
+  const renderEntry = (entry: AttendanceEntry) => {
+    const isIn = entry.action === 'clock_in';
+    const entryColor = isIn ? colors.success : colors.clockOut;
     return (
-      <View style={styles.group} accessible accessibilityRole="header">
-        <View style={styles.groupHeader}>
-          <Text style={styles.groupDate}>
-            {isToday ? 'Today' : format(d, 'EEEE, MMMM d')}
+      <View
+        key={entry.id}
+        style={[styles.entry, entry.is_flagged && styles.entryFlagged]}
+        accessible
+        accessibilityLabel={`${isIn ? 'Clock in' : 'Clock out'} at ${format(new Date(entry.timestamp_utc), 'h:mm a')}${entry.is_flagged ? ', flagged' : ''}`}
+      >
+        {/* Timeline dot */}
+        <View style={[styles.entryDotWrap, { borderColor: entryColor + '40', backgroundColor: entryColor + '15' }]}>
+          <View style={[styles.entryDot, { backgroundColor: entryColor }]} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.entryAction, { color: entryColor }]}>
+            {isIn ? '↑ Clocked In' : '↓ Clocked Out'}
           </Text>
-          {item.hoursWorked && (
-            <Text style={styles.groupHours}>{item.hoursWorked}</Text>
+          {entry.is_flagged && (
+            <View style={styles.flagPill}>
+              <Text style={styles.flagPillText}>⚠ Flagged{entry.flag_reason?.length ? `: ${entry.flag_reason[0]}` : ''}</Text>
+            </View>
           )}
         </View>
+        <Text style={styles.entryTime}>
+          {format(new Date(entry.timestamp_utc), 'HH:mm')}
+        </Text>
+      </View>
+    );
+  };
+
+  const renderGroup = ({ item }: { item: DayGroup }) => {
+    const d = new Date(item.date + 'T12:00:00');
+    const isToday = isSameDay(d, new Date());
+    return (
+      <View style={styles.group}>
+        {/* Day header */}
+        <View style={styles.groupHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.groupDate, isToday && { color: colors.primary }]}>
+              {isToday ? '🟢 Today' : format(d, 'EEEE')}
+            </Text>
+            <Text style={styles.groupDateSub}>{format(d, 'MMMM d, yyyy')}</Text>
+          </View>
+          {item.hoursWorked && (
+            <View style={styles.groupHoursBadge}>
+              <Text style={styles.groupHours}>⏱ {item.hoursWorked}</Text>
+            </View>
+          )}
+        </View>
+        {/* Timeline card */}
         <View style={styles.groupEntries}>
-          {item.entries.map(renderEntry)}
+          {/* Left accent bar */}
+          <View style={[styles.timelineBar, { backgroundColor: isToday ? colors.primary : colors.border }]} />
+          <View style={{ flex: 1 }}>
+            {item.entries.map(renderEntry)}
+          </View>
         </View>
       </View>
     );
@@ -143,7 +163,8 @@ const HistoryScreen: React.FC = () => {
       ) : groups.length === 0 ? (
         <View style={styles.centered}>
           <Text style={styles.emptyIcon}>📋</Text>
-          <Text style={styles.emptyText}>No attendance records{'\n'}for this period</Text>
+          <Text style={styles.emptyTitle}>No attendance records</Text>
+          <Text style={styles.emptyText}>Records for this period will{`\n`}appear here after you clock in.</Text>
         </View>
       ) : (
         <FlatList
@@ -184,20 +205,23 @@ const styles = StyleSheet.create({
   group: { marginBottom: spacing.md },
   groupHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: spacing.sm,
     paddingHorizontal: 2,
   },
-  groupDate: { fontSize: fontSize.base, fontWeight: '700', color: colors.textPrimary },
-  groupHours: {
-    fontSize: fontSize.sm,
-    color: colors.primary,
-    fontWeight: '600',
+  groupDate: { fontSize: fontSize.base, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.3 },
+  groupDateSub: { fontSize: fontSize.xs, color: colors.textMuted, fontWeight: '500', marginTop: 1 },
+  groupHoursBadge: {
     backgroundColor: colors.primaryLight,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 99,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  groupHours: {
+    fontSize: fontSize.xs,
+    color: colors.primary,
+    fontWeight: '700',
   },
   groupEntries: {
     backgroundColor: colors.surface,
@@ -205,8 +229,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
+    flexDirection: 'row',
     ...shadow.sm,
   },
+  timelineBar: { width: 4, borderRadius: 4 },
   entry: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -215,11 +241,29 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     gap: spacing.sm,
   },
-  entryFlagged: { backgroundColor: colors.warningLight },
+  entryFlagged: { backgroundColor: colors.warningLight + '80' },
+  entryDotWrap: {
+    width: 28, height: 28,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
   entryDot: { width: 8, height: 8, borderRadius: 4 },
-  entryAction: { fontSize: fontSize.base, color: colors.textPrimary, fontWeight: '500' },
-  entryFlag: { fontSize: fontSize.xs, color: colors.warning, fontWeight: '500', marginTop: 2 },
-  entryTime: { fontSize: fontSize.base, color: colors.textSecondary, fontVariant: ['tabular-nums'] as any },
+  entryAction: { fontSize: fontSize.sm, fontWeight: '700', letterSpacing: -0.2 },
+  flagPill: {
+    backgroundColor: colors.warningLight,
+    borderRadius: radius.full,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    alignSelf: 'flex-start',
+    marginTop: 3,
+  },
+  flagPillText: { fontSize: fontSize.xs, color: colors.warning, fontWeight: '600' },
+  entryTime: { fontSize: fontSize.sm, color: colors.textSecondary, fontVariant: ['tabular-nums'] as any, fontWeight: '600' },
+  emptyTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.xs },
+  emptyText: { fontSize: fontSize.base, color: colors.textMuted, textAlign: 'center', lineHeight: 24 },
 });
 
 export default HistoryScreen;
