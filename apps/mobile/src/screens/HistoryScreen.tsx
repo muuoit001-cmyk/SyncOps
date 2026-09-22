@@ -200,8 +200,6 @@ const styles = StyleSheet.create({
   periodBtnText: { fontSize: fontSize.sm, color: colors.textSecondary, fontWeight: '500' },
   periodBtnTextActive: { color: '#fff', fontWeight: '600' },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  emptyIcon: { fontSize: 48, marginBottom: spacing.sm },
-  emptyText: { fontSize: fontSize.base, color: colors.textMuted, textAlign: 'center', lineHeight: 24 },
   group: { marginBottom: spacing.md },
   groupHeader: {
     flexDirection: 'row',
@@ -262,6 +260,7 @@ const styles = StyleSheet.create({
   },
   flagPillText: { fontSize: fontSize.xs, color: colors.warning, fontWeight: '600' },
   entryTime: { fontSize: fontSize.sm, color: colors.textSecondary, fontVariant: ['tabular-nums'] as any, fontWeight: '600' },
+  emptyIcon: { fontSize: 52, marginBottom: spacing.md },
   emptyTitle: { fontSize: fontSize.md, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.xs },
   emptyText: { fontSize: fontSize.base, color: colors.textMuted, textAlign: 'center', lineHeight: 24 },
 });
