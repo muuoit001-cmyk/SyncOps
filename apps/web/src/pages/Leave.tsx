@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  CalendarDays, Search, CheckCircle, XCircle, Clock, Download, Filter,
-  ChevronDown, FileText, User, RefreshCw,
+  CalendarDays, Search, CheckCircle, XCircle, Clock, Filter,
+  ChevronDown, FileText, RefreshCw,
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import api from '../services/api';
