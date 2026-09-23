@@ -274,6 +274,50 @@ CREATE TRIGGER trg_staff_updated_at
   BEFORE UPDATE ON staff
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
+-- ── 10. Row-Level Security ───────────────────────────────────────────────────
+-- Resolves Supabase advisories: rls_disabled_in_public & sensitive_columns_exposed
+-- The Node.js backend uses the service_role key and is NOT affected by these policies.
+-- All direct anon/REST API access is denied; service_role retains full access.
+
+CREATE OR REPLACE FUNCTION _syncops_apply_rls(tbl TEXT)
+RETURNS VOID LANGUAGE plpgsql AS $$
+BEGIN
+  EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
+  EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', tbl);
+  EXECUTE format('DROP POLICY IF EXISTS syncops_deny_anon ON %I', tbl);
+  EXECUTE format('DROP POLICY IF EXISTS syncops_service_role_all ON %I', tbl);
+  EXECUTE format($p$
+    CREATE POLICY syncops_deny_anon ON %I
+      AS RESTRICTIVE FOR ALL TO anon
+      USING (false) WITH CHECK (false)
+  $p$, tbl);
+  EXECUTE format($p$
+    CREATE POLICY syncops_service_role_all ON %I
+      AS PERMISSIVE FOR ALL TO service_role
+      USING (true) WITH CHECK (true)
+  $p$, tbl);
+END;
+$$;
+
+SELECT _syncops_apply_rls('hr_users');
+SELECT _syncops_apply_rls('sites');
+SELECT _syncops_apply_rls('staff');
+SELECT _syncops_apply_rls('departments');
+SELECT _syncops_apply_rls('teams');
+SELECT _syncops_apply_rls('devices');
+SELECT _syncops_apply_rls('attendance_logs');
+SELECT _syncops_apply_rls('offline_queue');
+SELECT _syncops_apply_rls('refresh_tokens');
+SELECT _syncops_apply_rls('shifts');
+SELECT _syncops_apply_rls('staff_shifts');
+SELECT _syncops_apply_rls('leave_types');
+SELECT _syncops_apply_rls('leave_requests');
+SELECT _syncops_apply_rls('leave_documents');
+SELECT _syncops_apply_rls('notification_tokens');
+SELECT _syncops_apply_rls('notifications');
+
+DROP FUNCTION IF EXISTS _syncops_apply_rls(TEXT);
+
 
 -- ==============================================================================
 -- DEMO SEED DATA
